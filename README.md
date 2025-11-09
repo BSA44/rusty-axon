@@ -17,7 +17,4 @@ Peoject is on early stage of development and not ready for use.
 cargo check
 ```
 
-## License
 
-Choose a license once the implementation stabilises. Until then, the project is
-shared informally for learning purposes.
