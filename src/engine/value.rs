@@ -1,10 +1,10 @@
 //! Scalar value node that participates in automatic differentiation.
-
+use std::collections::HashSet;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt::Display;
 use std::ops::{Add, Sub, Mul, Div};
-
+use std::hash::{Hash, Hasher};
 #[derive(Debug, Clone, Copy)]
 pub enum OP {
     ADD,
@@ -35,19 +35,20 @@ pub struct Node {
 
 impl Node {
     pub fn new(value: f64) -> Self {
-        Self::with_children(value, Vec::new(), OP::NONE)
+        Self::with_children(value, HashSet::new(), OP::NONE)
     }
 // to create a node with children
-    fn with_children(value: f64, children: Vec<Node>, operation: OP) -> Self {
+    fn with_children(value: f64, children: HashSet<Node>, operation: OP) -> Self {
         Self { value: Rc::new(RefCell::new(Value::new(value, children, operation))) }
     }
 
+    
     // to get the value of the node
     pub fn get_value(&self) -> f64 {
         self.value.borrow().get_value()
     }
 
-    pub fn get_children(&self) -> Vec<Node> {
+    pub fn get_children(&self) -> HashSet<Node> {
         self.value.borrow().children.clone()
     }
 
@@ -65,24 +66,41 @@ impl Node {
 }
 
 
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.value, &other.value)
+    }
+}
+
+impl Eq for Node {}
+
+impl Hash for Node {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        //hash based on the address of the value
+        Rc::as_ptr(&self.value).hash(state);
+    }
+}
+
+
 // Scalar value tracked by the autograd engine.
 
 #[derive(Debug)]
 pub struct Value {
     value: f64,
     gradient: f64,
-    children: Vec<Node>,
+    children: HashSet<Node>,
     operation: OP,
 }
 
 
 impl Value {
     /// Construct a value node from raw data.
-    pub fn new(value: f64, children: Vec<Node>, operation: OP) -> Self {
+    pub fn new(value: f64, children: HashSet<Node>, operation: OP) -> Self {
         Self { value, gradient: 0.0, children, operation }
     }
 
-    pub fn with_children(value: f64, children: Vec<Node>, operation: OP) -> Self {
+    
+    pub fn with_children(value: f64, children: HashSet<Node>, operation: OP) -> Self {
         Self { value, gradient: 0.0, children, operation }
     }
 
@@ -91,7 +109,7 @@ impl Value {
         self.value
     }
     
-    pub fn get_children(&self) -> Vec<Node> {
+    pub fn get_children(&self) -> HashSet<Node> {
         self.children.clone()
     }
 
@@ -143,7 +161,11 @@ impl Add for Node {
     type Output = Node;
 
     fn add(self, other: Node) -> Node {
-        Node::with_children(self.get_value() + other.get_value(), vec![self, other], OP::ADD)
+        let new_val = self.get_value() + other.get_value();
+        let mut children = HashSet::new();
+        children.insert(self);
+        children.insert(other);
+        Node::with_children(new_val, children, OP::ADD)
     }
 }
 
@@ -151,7 +173,11 @@ impl Sub for Node {
     type Output = Node;
 
     fn sub(self, other: Node) -> Node {
-        Node::with_children(self.get_value() - other.get_value(), vec![self, other], OP::SUB)
+        let new_val = self.get_value() - other.get_value();
+        let mut children = HashSet::new();
+        children.insert(self);
+        children.insert(other);
+        Node::with_children(new_val, children, OP::SUB)
     }
 }
 
@@ -159,14 +185,22 @@ impl Mul for Node {
     type Output = Node;
 
     fn mul(self, other: Node) -> Node {
-        Node::with_children(self.get_value() * other.get_value(), vec![self, other], OP::MUL)
-    }
+        let new_val = self.get_value() * other.get_value();
+        let mut children = HashSet::new();
+        children.insert(self);
+        children.insert(other);
+        Node::with_children(new_val, children, OP::MUL)
+    }   
 }
 
 impl Div for Node {
     type Output = Node;
 
     fn div(self, other: Node) -> Node {
-        Node::with_children(self.get_value() / other.get_value(), vec![self, other], OP::DIV)
+        let new_val = self.get_value() / other.get_value();
+        let mut children = HashSet::new();
+        children.insert(self);
+        children.insert(other);
+        Node::with_children(new_val, children, OP::DIV)
     }
 }

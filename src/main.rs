@@ -9,7 +9,10 @@ fn main() {
     let a = Node::from(2.0);
     let b = Node::from(-3);
     let c = a.clone() + b.clone();
+    let d = c.clone() * c.clone();
     println!("a: {}", a);
     println!("b: {}", b);
     println!("c: {}", c);
+    println!("d: {}", d);
+    
 }
