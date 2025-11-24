@@ -1,16 +1,28 @@
 //! Definitions of differentiable operations that can be applied to values.
 
+use std::fmt::Display;
+use crate::engine::value::Node;
+
 /// Every differentiable operation should describe how to perform the forward
 /// computation and how to propagate gradients backward.
-pub trait Operation {
-    /// Perform the forward evaluation for this operation and return the result
-    /// as a newly created value node.
-    fn forward(&self) {
-        todo!("Apply the primitive's forward computation");
-    }
+#[derive(Debug, Clone)]
+pub enum Operation {
+    Add { left: Node, right: Node },
+    Sub { minuend: Node, subtrahend: Node },
+    Mul { left: Node, right: Node },
+    Div { dividend: Node, divisor: Node },
+    None,
+}
 
-    /// Propagate gradients to the operation's inputs during the backward pass.
-    fn backward(&self) {
-        todo!("Distribute the upstream gradient to the operation's arguments");
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Operation({})", match self {
+            Operation::Add { .. } => "ADD",
+            Operation::Sub { .. } => "SUB",
+            Operation::Mul { .. } => "MUL",
+            Operation::Div { .. } => "DIV",
+            Operation::None => "NONE",
+        })
     }
 }

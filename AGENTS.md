@@ -1,0 +1,1 @@
+This repo contains the code for the micrograd autograd engine implementation in Rust.

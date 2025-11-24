@@ -1,31 +1,15 @@
 //! Scalar value node that participates in automatic differentiation.
-use std::collections::HashSet;
+//use std::collections::HashSet;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt::Display;
 use std::ops::{Add, Sub, Mul, Div};
 use std::hash::{Hash, Hasher};
-#[derive(Debug, Clone, Copy)]
-pub enum OP {
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    NONE,
-}
+use std::collections::HashSet;
+use crate::engine::ops::Operation;
 
 
-impl Display for OP {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Operation({})", match self {
-            OP::ADD => "ADD",
-            OP::SUB => "SUB",
-            OP::MUL => "MUL",
-            OP::DIV => "DIV",
-            OP::NONE => "NONE",
-        })
-    }
-}
+
 
 //the actual reference everyone should work with
 #[derive(Debug, Clone)]
@@ -35,11 +19,11 @@ pub struct Node {
 
 impl Node {
     pub fn new(value: f64) -> Self {
-        Self::with_children(value, HashSet::new(), OP::NONE)
+        Self::with_operation(value, Operation::None)
     }
-// to create a node with children
-    fn with_children(value: f64, children: HashSet<Node>, operation: OP) -> Self {
-        Self { value: Rc::new(RefCell::new(Value::new(value, children, operation))) }
+
+    fn with_operation(value: f64, operation: Operation) -> Self {
+        Self { value: Rc::new(RefCell::new(Value::new(value, operation))) }
     }
 
     
@@ -48,9 +32,6 @@ impl Node {
         self.value.borrow().get_value()
     }
 
-    pub fn get_children(&self) -> HashSet<Node> {
-        self.value.borrow().children.clone()
-    }
 
     pub fn get_gradient(&self) -> f64 {
         self.value.borrow().get_gradient()
@@ -60,11 +41,95 @@ impl Node {
         self.value.borrow_mut().set_gradient(gradient);
     }
 
-    pub fn get_operation(&self) -> OP {
+    pub fn add_gradient(&self, gradient: f64) {
+        self.value.borrow_mut().gradient += gradient;
+    }
+
+    pub fn zero_gradient(&self) {
+        self.value.borrow_mut().set_gradient(0.0);
+    }
+
+    pub fn get_operation(&self) -> Operation {
         self.value.borrow().get_operation()
     }
-}
 
+    fn build_topo(&self ) -> Vec<Node> {
+        let mut topo = Vec::new();
+        let mut visited = HashSet::new();
+        self.build_topo_recursive(&mut topo, &mut visited);
+        return topo;
+    }
+    
+    fn build_topo_recursive(&self, topo:&mut Vec<Node>, visited:&mut HashSet<Node>) {
+        if visited.contains(self) {
+            return;
+        }
+        visited.insert(self.clone());
+        
+        let operation = self.get_operation();
+        match operation {
+            Operation::Add { left, right } 
+            | Operation::Mul { left, right } =>
+            {
+                left.build_topo_recursive(topo, visited);
+                right.build_topo_recursive(topo, visited);
+            },
+            Operation::Sub { minuend, subtrahend } => {
+                minuend.build_topo_recursive(topo, visited);
+                subtrahend.build_topo_recursive(topo, visited);
+            },
+            Operation::Div { dividend, divisor } => {
+                dividend.build_topo_recursive(topo, visited);
+                divisor.build_topo_recursive(topo, visited);
+            },
+            Operation::None => {
+            }
+        }
+        topo.push(self.clone());
+    }
+
+
+    pub fn backward(&mut self) {
+        self.set_gradient(1.0);
+        let topo = self.build_topo();
+        for node in topo.iter().rev() {
+            let node_borrow = node.value.borrow();
+            //out gradient
+            let grad = node_borrow.get_gradient();
+            
+            match &node_borrow.get_operation() {
+                Operation::Add { left, right } =>
+                {
+                    drop(node_borrow);
+                    left.add_gradient(grad);
+                    right.add_gradient(grad);
+                },
+                Operation::Div { dividend, divisor } =>
+                {
+                    drop(node_borrow);
+                    dividend.add_gradient(grad*(1.0/divisor.get_value()));
+                    divisor.add_gradient(-(grad)*(dividend.get_value()/(divisor.get_value()*divisor.get_value())));
+                },
+                Operation::Mul { left, right } =>
+                {
+                    drop(node_borrow);
+                    left.add_gradient(grad*right.get_value());
+                    right.add_gradient(grad*left.get_value());
+                },
+                Operation::Sub { minuend, subtrahend } =>
+                {
+                    drop(node_borrow);
+                    minuend.add_gradient(grad);
+                    subtrahend.add_gradient(-grad);
+                },
+                Operation::None =>
+                {
+                    drop(node_borrow);
+                }
+            }
+        }
+    }
+}
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
@@ -81,6 +146,48 @@ impl Hash for Node {
     }
 }
 
+impl Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value(val={}, grad={}, operation={})", self.get_value(), self.get_gradient(), self.get_operation())
+    }
+}
+
+
+impl Add for Node {
+    type Output = Node;
+
+    fn add(self, other: Node) -> Node {
+        let new_val = self.get_value() + other.get_value();
+        Node::with_operation(new_val, Operation::Add { left: self, right: other })
+    }
+}
+
+impl Sub for Node {
+    type Output = Node;
+
+    fn sub(self, other: Node) -> Node {
+        let new_val = self.get_value() - other.get_value();
+        Node::with_operation(new_val,  Operation::Sub { minuend: self, subtrahend: other })
+    }
+}
+
+impl Mul for Node {
+    type Output = Node;
+
+    fn mul(self, other: Node) -> Node {
+        let new_val = self.get_value() * other.get_value();
+        Node::with_operation(new_val, Operation::Mul { left: self, right: other })
+    }   
+}
+
+impl Div for Node {
+    type Output = Node;
+
+    fn div(self, other: Node) -> Node {
+        let new_val = self.get_value() / other.get_value();
+        Node::with_operation(new_val, Operation::Div { dividend: self, divisor: other })
+    }
+}
 
 // Scalar value tracked by the autograd engine.
 
@@ -88,20 +195,19 @@ impl Hash for Node {
 pub struct Value {
     value: f64,
     gradient: f64,
-    children: HashSet<Node>,
-    operation: OP,
+    operation: Operation,
 }
 
 
 impl Value {
     /// Construct a value node from raw data.
-    pub fn new(value: f64, children: HashSet<Node>, operation: OP) -> Self {
-        Self { value, gradient: 0.0, children, operation }
+    pub fn new(value: f64, operation: Operation) -> Self {
+        Self { value, gradient: 0.0, operation }
     }
 
     
-    pub fn with_children(value: f64, children: HashSet<Node>, operation: OP) -> Self {
-        Self { value, gradient: 0.0, children, operation }
+    pub fn with_operation(value: f64, operation: Operation) -> Self {
+        Self { value, gradient: 0.0, operation }
     }
 
 
@@ -109,16 +215,12 @@ impl Value {
         self.value
     }
     
-    pub fn get_children(&self) -> HashSet<Node> {
-        self.children.clone()
-    }
-
     pub fn get_gradient(&self) -> f64 {
         self.gradient
     }
 
-    pub fn get_operation(&self) -> OP {
-        self.operation
+    pub fn get_operation(&self) -> Operation {
+        self.operation.clone()
     }
 
     pub fn set_gradient(&mut self, gradient: f64) {
@@ -151,56 +253,4 @@ impl From<i64> for Node {
     }
 }
 
-impl Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Value(val={}, grad={}, children={}, operation={})", self.get_value(), self.get_gradient(), self.get_children().len(), self.get_operation())
-    }
-}
 
-impl Add for Node {
-    type Output = Node;
-
-    fn add(self, other: Node) -> Node {
-        let new_val = self.get_value() + other.get_value();
-        let mut children = HashSet::new();
-        children.insert(self);
-        children.insert(other);
-        Node::with_children(new_val, children, OP::ADD)
-    }
-}
-
-impl Sub for Node {
-    type Output = Node;
-
-    fn sub(self, other: Node) -> Node {
-        let new_val = self.get_value() - other.get_value();
-        let mut children = HashSet::new();
-        children.insert(self);
-        children.insert(other);
-        Node::with_children(new_val, children, OP::SUB)
-    }
-}
-
-impl Mul for Node {
-    type Output = Node;
-
-    fn mul(self, other: Node) -> Node {
-        let new_val = self.get_value() * other.get_value();
-        let mut children = HashSet::new();
-        children.insert(self);
-        children.insert(other);
-        Node::with_children(new_val, children, OP::MUL)
-    }   
-}
-
-impl Div for Node {
-    type Output = Node;
-
-    fn div(self, other: Node) -> Node {
-        let new_val = self.get_value() / other.get_value();
-        let mut children = HashSet::new();
-        children.insert(self);
-        children.insert(other);
-        Node::with_children(new_val, children, OP::DIV)
-    }
-}
