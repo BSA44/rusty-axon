@@ -3,13 +3,41 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt::Display;
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul, Div, Neg};
 use std::hash::{Hash, Hasher};
 use std::collections::HashSet;
 use crate::engine::ops::Operation;
 
+macro_rules! impl_op_scalar {
+    ($op_trait:ident, $op_method:ident, $scalar_ty:ty) => {
+        // Node op Scalar (e.g., node * 2.0)
+        impl $op_trait<$scalar_ty> for Node {
+            type Output = Node;
+            
+            fn $op_method(self, rhs: $scalar_ty) -> Node {
+                self.$op_method(Node::from(rhs))
+            }
+        }
+        
+        // Scalar op Node (e.g., 2.0 * node)
+        impl $op_trait<Node> for $scalar_ty {
+            type Output = Node;
+            
+            fn $op_method(self, rhs: Node) -> Node {
+                Node::from(self).$op_method(rhs)
+            }
+        }
+    };
+}
 
-
+macro_rules! impl_ops_for_scalar {
+    ($scalar_ty:ty) => {
+        impl_op_scalar!(Add, add, $scalar_ty);
+        impl_op_scalar!(Sub, sub, $scalar_ty);
+        impl_op_scalar!(Mul, mul, $scalar_ty);
+        impl_op_scalar!(Div, div, $scalar_ty);
+    };
+}
 
 //the actual reference everyone should work with
 #[derive(Debug, Clone)]
@@ -82,6 +110,15 @@ impl Node {
                 dividend.build_topo_recursive(topo, visited);
                 divisor.build_topo_recursive(topo, visited);
             },
+            Operation::Pow { base, exponent } => {
+                base.build_topo_recursive(topo, visited);
+            },
+            Operation::Exp { exponent } => {
+                exponent.build_topo_recursive(topo, visited);
+            },
+            Operation::Neg { operand } => {
+                operand.build_topo_recursive(topo, visited);
+            },
             Operation::None => {
             }
         }
@@ -122,12 +159,37 @@ impl Node {
                     minuend.add_gradient(grad);
                     subtrahend.add_gradient(-grad);
                 },
+                Operation::Pow { base, exponent } =>
+                {
+                    drop(node_borrow);
+                    base.add_gradient(grad*exponent*base.get_value().powf(exponent-1.0));
+                },
+                Operation::Exp { exponent } =>
+                {
+                    let exp_result = node_borrow.get_value();
+                    drop(node_borrow);
+                    exponent.add_gradient(grad*exp_result);
+                },
+                Operation::Neg { operand } =>
+                {
+                    drop(node_borrow);
+                    operand.add_gradient(-grad);
+                },
                 Operation::None =>
                 {
                     drop(node_borrow);
                 }
             }
         }
+    }
+
+
+    pub fn pow(&self, exponent: f64) -> Node {
+        Node::with_operation(self.get_value().powf(exponent), Operation::Pow { base: self.clone(), exponent })
+    }
+
+    pub fn exp(&self) -> Node {
+        Node::with_operation(self.get_value().exp(), Operation::Exp { exponent: self.clone() })
     }
 }
 
@@ -186,6 +248,14 @@ impl Div for Node {
     fn div(self, other: Node) -> Node {
         let new_val = self.get_value() / other.get_value();
         Node::with_operation(new_val, Operation::Div { dividend: self, divisor: other })
+    }
+}
+
+impl Neg for Node {
+    type Output = Node;
+
+    fn neg(self) -> Node {
+        Node::with_operation(-self.get_value(), Operation::Neg { operand: self })
     }
 }
 
@@ -253,4 +323,9 @@ impl From<i64> for Node {
     }
 }
 
+// Invoke macros to generate scalar operation implementations
+//impl_ops_for_scalar!(i64);
+//impl_ops_for_scalar!(f32);
+//impl_ops_for_scalar!(i32);
+impl_ops_for_scalar!(f64);
 

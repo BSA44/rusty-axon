@@ -11,6 +11,9 @@ pub enum Operation {
     Sub { minuend: Node, subtrahend: Node },
     Mul { left: Node, right: Node },
     Div { dividend: Node, divisor: Node },
+    Pow { base: Node, exponent: f64 },
+    Exp { exponent: Node },
+    Neg { operand: Node },
     None,
 }
 
@@ -22,6 +25,9 @@ impl Display for Operation {
             Operation::Sub { .. } => "SUB",
             Operation::Mul { .. } => "MUL",
             Operation::Div { .. } => "DIV",
+            Operation::Pow { .. } => "POW",
+            Operation::Exp { .. } => "EXP",
+            Operation::Neg { .. } => "NEG",
             Operation::None => "NONE",
         })
     }

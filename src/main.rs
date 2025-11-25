@@ -9,15 +9,22 @@ fn main() {
     let a = Node::from(2.0);
     let b = Node::from(-3);
     let c = a.clone() + b.clone();
-    let mut d = c.clone() * c.clone();
+    let d = c.pow(2.0);
+    //let mut e = d.exp();
+    let e = Node::from(1.0);
+    let mut f = ((e.clone()*2.0).exp()-1.0)/((e.clone()*2.0).exp()+1.0);
     println!("a: {}", a);
     println!("b: {}", b);
     println!("c: {}", c);
     println!("d: {}", d);
+    println!("e: {}", e);
+    println!("f: {}", f);
     println!("After backward");
-    d.backward();
+    f.backward();
     println!("a: {}", a);
     println!("b: {}", b);
     println!("c: {}", c);
     println!("d: {}", d);
+    println!("e: {}", e);
+    println!("f: {}", f);
 }
