@@ -3,3 +3,7 @@
 pub mod layer;
 pub mod mlp;
 pub mod neuron;
+pub mod activations;
+
+#[cfg(test)]
+mod tests;

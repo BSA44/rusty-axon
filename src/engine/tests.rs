@@ -348,5 +348,49 @@ mod tests {
         assert_close(f.get_value(), 2.0, "forward value");
         assert_close(x.get_gradient(), 0.25, "df/dx"); // 0.5 / 2 = 0.25
     }
+
+    #[test]
+    fn test_graph_visualization() {
+        // Test that to_dot generates valid DOT format
+        let a = Node::from(2.0);
+        let b = Node::from(3.0);
+        let mut c = a.clone() + b.clone();
+        c.backward();
+
+        let dot = c.to_dot();
+        
+        // Check basic DOT structure
+        assert!(dot.contains("digraph G"));
+        assert!(dot.contains("rankdir=LR"));
+        
+        // Check that nodes are present
+        assert!(dot.contains("val=5.0000"));
+        assert!(dot.contains("val=2.0000"));
+        assert!(dot.contains("val=3.0000"));
+        
+        // Check that gradients are present
+        assert!(dot.contains("grad=1.0000"));
+        
+        // Check that operation is present
+        assert!(dot.contains("label=\"+\""));
+    }
+
+    #[test]
+    fn test_complex_graph_visualization() {
+        // Test with more complex expression
+        let x = Node::from(2.0);
+        let y = Node::from(3.0);
+        let z = (x.clone() * y.clone()).pow(2.0);
+        let mut result = z / (x.clone() + 1.0);
+        result.backward();
+
+        let dot = result.to_dot();
+        
+        // Should contain multiple operations
+        assert!(dot.contains("×"));  // multiplication
+        assert!(dot.contains("+"));  // addition
+        assert!(dot.contains("÷"));  // division
+        assert!(dot.contains("^"));  // power
+    }
 }
 

@@ -6,6 +6,8 @@ use std::fmt::Display;
 use std::ops::{Add, Sub, Mul, Div, Neg};
 use std::hash::{Hash, Hasher};
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
 use crate::engine::ops::Operation;
 
 macro_rules! impl_op_scalar {
@@ -110,13 +112,16 @@ impl Node {
                 dividend.build_topo_recursive(topo, visited);
                 divisor.build_topo_recursive(topo, visited);
             },
-            Operation::Pow { base, exponent } => {
+            Operation::Pow { base, exponent: _ } => {
                 base.build_topo_recursive(topo, visited);
             },
             Operation::Exp { exponent } => {
                 exponent.build_topo_recursive(topo, visited);
             },
             Operation::Neg { operand } => {
+                operand.build_topo_recursive(topo, visited);
+            },
+            Operation::Log { base:_ ,operand } => {
                 operand.build_topo_recursive(topo, visited);
             },
             Operation::None => {
@@ -175,6 +180,11 @@ impl Node {
                     drop(node_borrow);
                     operand.add_gradient(-grad);
                 },
+                Operation::Log { base, operand } =>
+                {
+                    drop(node_borrow);
+                    operand.add_gradient(grad/(operand.get_value()*base.ln()));
+                },
                 Operation::None =>
                 {
                     drop(node_borrow);
@@ -191,6 +201,287 @@ impl Node {
     pub fn exp(&self) -> Node {
         Node::with_operation(self.get_value().exp(), Operation::Exp { exponent: self.clone() })
     }
+
+    pub fn log(&self, base: f64) -> Node {
+        Node::with_operation(self.get_value().log(base), Operation::Log { base, operand: self.clone() })
+    }
+
+    /// Get unique identifier for this node based on its memory address
+    fn node_id(&self) -> String {
+        format!("n{:x}", Rc::as_ptr(&self.value) as usize)
+    }
+
+    /// Generate a DOT graph visualization of the computation graph
+    pub fn to_dot(&self) -> String {
+        let mut dot = String::from("digraph G {\n");
+        dot.push_str("    rankdir=LR;\n");
+        dot.push_str("    node [style=filled];\n");
+        dot.push_str("    edge [color=gray];\n\n");
+        
+        let mut visited = HashSet::new();
+        self.build_dot_recursive(&mut dot, &mut visited);
+        
+        dot.push_str("}\n");
+        dot
+    }
+
+    /// Recursively build DOT graph representation
+    fn build_dot_recursive(&self, dot: &mut String, visited: &mut HashSet<String>) {
+        let id = self.node_id();
+        
+        if visited.contains(&id) {
+            return;
+        }
+        visited.insert(id.clone());
+        
+        // Create node label with value and gradient
+        let label = format!("val={:.4}\\ngrad={:.4}", 
+            self.get_value(), 
+            self.get_gradient()
+        );
+        
+        // Determine color based on gradient magnitude
+        let grad_abs = self.get_gradient().abs();
+        let fillcolor = if grad_abs > 1.0 {
+            "lightcoral"
+        } else if grad_abs > 0.1 {
+            "lightyellow"
+        } else if grad_abs > 1e-10 {
+            "lightblue"
+        } else {
+            "lightgray"
+        };
+        
+        // Add this value node to the graph
+        dot.push_str(&format!(
+            "    {} [label=\"{}\" shape=box fillcolor={}];\n",
+            id, label, fillcolor
+        ));
+        
+        // Handle operations
+        let operation = self.get_operation();
+        match operation {
+            Operation::Add { left, right } => {
+                let op_id = format!("{}_add", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"+\" shape=circle fillcolor=orange];\n",
+                    op_id
+                ));
+                
+                // Recurse on children
+                left.build_dot_recursive(dot, visited);
+                right.build_dot_recursive(dot, visited);
+                
+                // Add edges
+                dot.push_str(&format!("    {} -> {};\n", left.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", right.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Sub { minuend, subtrahend } => {
+                let op_id = format!("{}_sub", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"-\" shape=circle fillcolor=orange];\n",
+                    op_id
+                ));
+                
+                minuend.build_dot_recursive(dot, visited);
+                subtrahend.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", minuend.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", subtrahend.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Mul { left, right } => {
+                let op_id = format!("{}_mul", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"×\" shape=circle fillcolor=lightgreen];\n",
+                    op_id
+                ));
+                
+                left.build_dot_recursive(dot, visited);
+                right.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", left.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", right.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Div { dividend, divisor } => {
+                let op_id = format!("{}_div", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"÷\" shape=circle fillcolor=lightgreen];\n",
+                    op_id
+                ));
+                
+                dividend.build_dot_recursive(dot, visited);
+                divisor.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", dividend.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", divisor.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Pow { base, exponent } => {
+                let op_id = format!("{}_pow", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"^{:.2}\" shape=circle fillcolor=plum];\n",
+                    op_id, exponent
+                ));
+                
+                base.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", base.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Exp { exponent } => {
+                let op_id = format!("{}_exp", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"exp\" shape=circle fillcolor=plum];\n",
+                    op_id
+                ));
+                
+                exponent.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", exponent.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Log { base, operand } => {
+                let op_id = format!("{}_log", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"log_{{{}}}\" shape=circle fillcolor=plum];\n",
+                    op_id, base
+                ));
+                
+                operand.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", operand.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::Neg { operand } => {
+                let op_id = format!("{}_neg", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"-\" shape=circle fillcolor=orange];\n",
+                    op_id
+                ));
+                
+                operand.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", operand.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::None => {
+                // Leaf node - already added above
+            }
+        }
+    }
+
+    /// Save the computation graph to a DOT file
+    pub fn save_graph(&self, filename: &str) -> std::io::Result<()> {
+        let dot = self.to_dot();
+        let mut file = File::create(filename)?;
+        file.write_all(dot.as_bytes())?;
+        println!("[+]  Graph saved to {}", filename);
+        println!("  Render with: dot -Tpng {} -o graph.png", filename);
+        println!("  Or view online: http://www.webgraphviz.com/");
+        Ok(())
+    }
+
+    /// Check if Graphviz is installed
+    pub fn check_graphviz() -> bool {
+        std::process::Command::new("dot")
+            .arg("-V")
+            .output()
+            .is_ok()
+    }
+
+    /// Render the computation graph to an image file
+    /// 
+    /// # Arguments
+    /// * `output_name` - Base name for output files (without extension)
+    /// * `format` - Output format: "png", "svg", "pdf", "jpg"
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let x = Node::from(2.0);
+    /// let mut y = x.pow(2.0);
+    /// y.backward();
+    /// y.render_to("graph", "png").unwrap();  // Creates graph.png
+    /// y.render_to("graph", "svg").unwrap();  // Creates graph.svg
+    /// ```
+    pub fn render_to(&self, output_name: &str, format: &str) -> std::io::Result<()> {
+        let dot_file = format!("{}.dot", output_name);
+        let output_file = format!("{}.{}", output_name, format);
+        
+        // Save DOT file first
+        self.save_graph(&dot_file)?;
+        
+        // Check if graphviz is available
+        if !Self::check_graphviz() {
+            println!("[-] Graphviz not found!");
+            println!("  Download from: https://graphviz.org/download/");
+            println!("  Windows: winget install graphviz or choco install graphviz");
+            println!("  Mac: brew install graphviz");
+            println!("  Linux: sudo apt install graphviz");
+            println!("\n  You can still view the .dot file at: http://www.webgraphviz.com/");
+            return Ok(());
+        }
+        
+        // Validate format
+        let valid_formats = ["png", "svg", "pdf", "jpg", "jpeg", "gif"];
+        if !valid_formats.contains(&format) {
+            println!("[-] Unsupported format: {}", format);
+            println!("  Supported formats: png, svg, pdf, jpg");
+            return Ok(());
+        }
+        
+        // Render with dot command
+        let format_arg = format!("-T{}", format);
+        let result = std::process::Command::new("dot")
+            .args(&[&format_arg, &dot_file, "-o", &output_file])
+            .output();
+        
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    println!("[+] Graph rendered to {}", output_file);
+                    
+                    // Show file size
+                    if let Ok(metadata) = std::fs::metadata(&output_file) {
+                        let size_kb = metadata.len() / 1024;
+                        println!("  Size: {} KB", size_kb);
+                    }
+                } else {
+                    let error = String::from_utf8_lossy(&output.stderr);
+                    println!("[-] Rendering failed: {}", error);
+                }
+                Ok(())
+            }
+            Err(e) => {
+                println!("[-] Could not render graph: {}", e);
+                Ok(())
+            }
+        }
+    }
+
+    /// Render to PNG (convenience method)
+    pub fn render_png(&self, output_name: &str) -> std::io::Result<()> {
+        self.render_to(output_name, "png")
+    }
+
+    /// Render to SVG (convenience method)
+    pub fn render_svg(&self, output_name: &str) -> std::io::Result<()> {
+        self.render_to(output_name, "svg")
+    }
+
+    /// Render to PDF (convenience method)
+    pub fn render_pdf(&self, output_name: &str) -> std::io::Result<()> {
+        self.render_to(output_name, "pdf")
+    }
+
+    /// Legacy method - now calls render_png
+    #[deprecated(since = "0.1.0", note = "Use render_png() or render_to() instead")]
+    pub fn render_graph(&self, output_name: &str) -> std::io::Result<()> {
+        self.render_png(output_name)
+    }
+    
 }
 
 impl PartialEq for Node {
