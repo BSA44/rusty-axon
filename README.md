@@ -134,18 +134,7 @@ y.backward();         // dy/dx = 3x² = 12.0
 println!("{}", x.get_gradient()); // 12.0
 ```
 
-### Operations Supported
 
-| Operation | Syntax | Gradient |
-|-----------|--------|----------|
-| Addition | `a + b` | ∂/∂a = 1, ∂/∂b = 1 |
-| Subtraction | `a - b` | ∂/∂a = 1, ∂/∂b = -1 |
-| Multiplication | `a * b` | ∂/∂a = b, ∂/∂b = a |
-| Division | `a / b` | ∂/∂a = 1/b, ∂/∂b = -a/b² |
-| Power | `a.pow(n)` | ∂/∂a = n·aⁿ⁻¹ |
-| Exponential | `a.exp()` | ∂/∂a = eᵃ |
-| Logarithm | `a.log(base)` | ∂/∂a = 1/(a·ln(base)) |
-| Negation | `-a` | ∂/∂a = -1 |
 
 ### Neural Networks
 
@@ -163,15 +152,6 @@ let network = Mlp::new(
     ]
 );
 ```
-
-### Activation Functions
-
-| Function | Formula | Use Case |
-|----------|---------|----------|
-| **Sigmoid** | σ(x) = 1/(1+e⁻ˣ) | Binary classification |
-| **Tanh** | tanh(x) = (e²ˣ-1)/(e²ˣ+1) | Hidden layers |
-| **Swish** | swish(x) = x·σ(x) | Modern networks |
-| **None** | f(x) = x | Linear/output layer |
 
 ## 📊 Visualization
 
@@ -263,19 +243,6 @@ This is an **educational project**. Not suitable for production:
 - **Memory intensive** - Stores full computation graph
 - **Not optimized** - Focus on clarity over performance
 
-For production ML in Rust, use:
-- [tch-rs](https://github.com/LaurentMazare/tch-rs) (PyTorch bindings)
-- [burn](https://github.com/burn-rs/burn) (Deep learning framework)
-- [candle](https://github.com/huggingface/candle) (Minimalist ML framework)
-
-## 🤝 Contributing
-
-Contributions welcome! This project is for learning, so:
-
-1. **Good first issues**: Implement optimizers, add examples
-2. **Enhancements**: Better visualizations, more activations
-3. **Documentation**: Tutorials, explanations, diagrams
-4. **Tests**: Edge cases, property-based testing
 
 ## 📄 License
 
@@ -286,13 +253,6 @@ MIT License - see [LICENSE](LICENSE) file
 - **Andrej Karpathy** - For [micrograd](https://github.com/karpathy/micrograd) and the amazing [tutorial](https://www.youtube.com/watch?v=VMj-3S1tku0)
 - **Rust Community** - For excellent documentation and tools
 - **Graphviz** - For visualization capabilities
-
-## 📞 Contact
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/rusty-axon/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/rusty-axon/discussions)
-
----
 
 **Built with ❤️ in Rust for learning and education.**
 
