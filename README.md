@@ -12,7 +12,7 @@ An educational project implementing automatic differentiation (autograd) and neu
 - ✅ **Scalar Autograd Engine** - Automatic differentiation with gradient accumulation
 - ✅ **Neural Networks** - Neuron, Layer, and MLP (Multi-Layer Perceptron)
 - ✅ **Activation Functions** - Sigmoid, Tanh, Swish
-- ✅ **Graph Visualization** - Beautiful computation graph rendering (PNG, SVG, PDF)
+- ✅ **Dual Visualization** - Layer-oriented architecture + detailed computation graphs (PNG, SVG, PDF)
 - ✅ **Pure Rust** - Zero-cost abstractions, no Python dependencies
 - ✅ **Comprehensive Tests** - 40+ tests covering all operations
 
@@ -91,25 +91,32 @@ fn main() {
 
 ```rust
 use rusty_axon::engine::Node;
+use rusty_axon::nn::{Mlp, Activations};
 
 fn main() {
-    let a = Node::from(2.0);
-    let b = Node::from(3.0);
-    let mut c = (a.clone() + b.clone()).pow(2.0);
-    c.backward();
+    // Create a neural network
+    let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
     
-    // Generate visualization
-    c.render_png("graph").unwrap();  // Creates graph.png
-    c.render_svg("graph").unwrap();  // Creates graph.svg
+    // Visualize network architecture (layer-oriented view)
+    mlp.render_network_png("architecture").unwrap();  // Clean layer diagram
+    
+    // Or visualize computation graph (detailed scalar operations)
+    let inputs = vec![Node::from(1.0), Node::from(2.0)];
+    let mut output = mlp.forward(&inputs)[0].clone();
+    output.backward();
+    output.render_png("computation").unwrap();  // Detailed computation graph
 }
 ```
 
-![Example Graph](examples/neural_network.png)
+**Layer-Oriented View** (architecture.png):
+
+![Network Architecture](network_architecture.png)
 
 ## 📚 Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Complete architecture and implementation details
-- **[VISUALIZATION.md](VISUALIZATION.md)** - Graph visualization guide
+- **[NETWORK_VISUALIZATION.md](NETWORK_VISUALIZATION.md)** - Layer-oriented network visualization guide (NEW!)
+- **[VISUALIZATION.md](VISUALIZATION.md)** - Computation graph visualization guide
 - **[Examples](examples/)** - Code examples and tutorials
 
 ## 🎯 What Can You Build?
@@ -155,18 +162,37 @@ let network = Mlp::new(
 
 ## 📊 Visualization
 
-Visualize your computation graphs with color-coded gradients:
+Rusty-Axon provides **two types of visualization**:
+
+### 1. Layer-Oriented Architecture View (NEW!)
 
 ```rust
-// After backward pass, visualize the graph
-output.render_svg("my_network").unwrap();
+// Visualize network architecture
+let mlp = Mlp::new(&[2, 4, 4, 1], &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]);
+mlp.render_network_png("architecture").unwrap();
+```
+
+**Features:**
+- 🏗️ Clear layer structure (Input → Hidden → Output)
+- 🎨 Color-coded layers (Blue=Input, Yellow=Hidden, Green=Output)
+- 🔤 Shows activation functions
+- 📊 Perfect for presentations and documentation
+
+### 2. Computation Graph View (Original)
+
+```rust
+// After backward pass, visualize detailed scalar operations
+output.backward();
+output.render_svg("computation_graph").unwrap();
 ```
 
 **Features:**
 - 🎨 Color-coded nodes by gradient magnitude (red=high, blue=low)
 - 📦 Shows values and gradients in each node
 - 🔄 Displays operation types and connections
-- 📈 Multiple formats: PNG, SVG, PDF, JPG
+- 🔬 Perfect for debugging backpropagation
+
+**Formats:** PNG, SVG, PDF, JPG
 
 Requires [Graphviz](https://graphviz.org/download/) for automatic rendering.
 

@@ -2,27 +2,6 @@
 
 This repo contains the code for the micrograd autograd engine implementation in Rust - an educational project for automatic differentiation and neural network building.
 
-## Project Status
-
-**Core Engine:** ✅ **Complete and Working**
-- Forward pass with automatic graph construction
-- Backward pass with gradient accumulation
-- Supports: Add, Sub, Mul, Div, Pow, Exp, Neg, Log operations
-- 40+ comprehensive tests covering all operations
-
-**Neural Networks:** ✅ **Complete and Working**
-- ✅ Neuron with weights, bias, and activation functions
-- ✅ Layer (fully connected) with parameter collection
-- ✅ MLP (Multi-Layer Perceptron) supporting deep networks
-- ✅ Activation functions: Sigmoid, Tanh, Swish, None
-
-**Graph Visualization:** ✅ **Complete and Working**
-- ✅ DOT file generation (Graphviz format)
-- ✅ Auto-render to PNG, SVG, PDF, JPG
-- ✅ Color-coded gradients (red=high, blue=low, gray=zero)
-- ✅ Interactive visualization of computation graphs
-
-**Optimizers:** ⚠️ **Not Yet Implemented**
 
 ## Architecture Overview
 
@@ -103,34 +82,6 @@ let c = a.clone() + b.clone();  // Stores a and b in Operation::Add
    - `Neg`: negates the gradient
    - `Log`: logarithm derivative with chain rule
 
-#### Gradient Accumulation
-**Critical:** Gradients are **accumulated** (`+=`), not set (`=`).
-
-**Why:** A node used multiple times receives gradients through multiple paths:
-```rust
-let a = Node::from(2.0);
-let b = a.clone() * a.clone();  // a appears twice!
-// After backward: a.grad = 2*a = 4.0 (accumulated from both paths)
-```
-
-### Memory Model
-
-```
-Node (cheap handle)                           Node (another handle)
-  │                                                                       │
-  ├───────────────────────────┘
-  ▼
-Rc (reference counter = 2)
-  │
-  ▼
-RefCell (interior mutability)
-  │
-  ▼
-Value { value: 2.0, gradient: 4.0, operation: ... }
-```
-
-Multiple `Node` handles can share the same `Value`, enabling the DAG structure needed for autograd.
-
 ## Neural Network Architecture
 
 ### Neuron
@@ -178,14 +129,58 @@ pub enum Activations {
 
 ## Graph Visualization
 
-### Features
-- Generate DOT files for Graphviz
-- Auto-render to PNG, SVG, PDF, JPG
-- Color-coded by gradient magnitude
-- Shows values, gradients, and operations
+Rusty-Axon provides **two complementary visualization systems**:
 
-### Usage
+### 1. Layer-Oriented Network Visualization (NEW!)
+
+**Purpose:** Visualize neural network **architecture** with clear layer structure.
+
+**Features:**
+- Shows Input, Hidden, and Output layers as grouped units
+- Color-coded layers (Blue=Input, Yellow=Hidden, Green=Output)
+- Displays activation functions (Tanh, Sigmoid, etc.)
+- Clean, presentation-ready diagrams
+- Perfect for understanding network structure
+
+**Implementation:**
+- Module: `src/nn/visualization.rs`
+- Generates DOT files with subgraphs for each layer
+- Uses Graphviz clusters to group neurons by layer
+- Renders to PNG, SVG, PDF formats
+
+**Usage:**
 ```rust
+// Create network
+let mlp = Mlp::new(&[2, 4, 4, 1], &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]);
+
+// Visualize architecture
+mlp.render_network_png("network")?;     // Creates network.png
+mlp.render_network_svg("network")?;     // Creates network.svg
+mlp.render_network_pdf("network")?;     // Creates network.pdf
+
+// Or use the main method
+mlp.visualize_network("network", "png")?;
+```
+
+### 2. Computation Graph Visualization (Original)
+
+**Purpose:** Visualize the **computation graph** showing every scalar operation.
+
+**Features:**
+- Shows individual scalar values and operations
+- Color-coded by gradient magnitude (red=high, blue=low, gray=zero)
+- Displays values, gradients, and operation types
+- Perfect for debugging backpropagation
+
+**Implementation:**
+- Methods: `Node::to_dot()`, `Node::render_png()`, etc.
+- Recursively builds DOT representation of entire computation DAG
+- Each operation creates intermediate nodes
+- Shows the micrograd-style detailed view
+
+**Usage:**
+```rust
+// Build computation
 let a = Node::from(2.0);
 let b = Node::from(3.0);
 let mut c = a.clone() + b.clone();
@@ -199,15 +194,19 @@ c.render_png("graph")?;
 c.render_svg("graph")?;
 c.render_pdf("graph")?;
 
-// Visualize entire neural network
+// Or visualize neural network computation
 let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
 let inputs = vec![Node::from(1.0), Node::from(2.0)];
 let mut output = mlp.forward(&inputs)[0].clone();
 output.backward();
-output.render_svg("mlp_graph")?;
+output.render_svg("mlp_computation_graph")?;
 ```
 
-See `VISUALIZATION.md` for detailed documentation.
+
+### Documentation
+
+- See `NETWORK_VISUALIZATION.md` for layer-oriented visualization guide
+- See `VISUALIZATION.md` for computation graph visualization guide
 
 ## File Structure
 
@@ -216,7 +215,7 @@ rusty-axon/
 ├── src/
 │   ├── engine/
 │   │   ├── mod.rs       - Module exports
-│   │   ├── value.rs     - Node, Value, operators, backward pass, visualization
+│   │   ├── value.rs     - Node, Value, operators, backward pass, computation graph viz
 │   │   ├── ops.rs       - Operation enum definition
 │   │   ├── graph.rs     - Computation graph utilities (placeholder)
 │   │   └── tests.rs     - 25+ tests for autograd engine
@@ -226,17 +225,20 @@ rusty-axon/
 │   │   ├── layer.rs     - Fully connected layer ✅
 │   │   ├── mlp.rs       - Multi-layer perceptron ✅
 │   │   ├── activations.rs - Activation functions ✅
+│   │   ├── visualization.rs - Layer-oriented network visualization ✅
 │   │   └── tests.rs     - 15+ tests for neural networks
 │   ├── optim/
 │   │   ├── mod.rs       - Module exports
 │   │   └── sgd.rs       - SGD optimizer (TODO)
 │   ├── lib.rs           - Library entry point
-│   └── main.rs          - Demo with visualization
+│   └── main.rs          - Demo with dual visualization
 ├── examples/
-│   └── graph_visualization.rs - Comprehensive visualization examples
+│   ├── graph_visualization.rs - Computation graph examples (original)
+│   └── network_visualization.rs - Layer-oriented network examples (NEW)
 ├── AGENTS.md            - This file (architecture documentation)
 ├── README.md            - Quick start guide
-├── VISUALIZATION.md     - Graph visualization guide
+├── NETWORK_VISUALIZATION.md - Layer-oriented visualization guide (NEW)
+├── VISUALIZATION.md     - Computation graph visualization guide
 └── Cargo.toml          - Dependencies (only rand for initialization)
 ```
 
@@ -316,18 +318,6 @@ for param in mlp.parameters() {
 - **Neural Network Tests (15 tests)**: Neuron, Layer, MLP forward/backward passes
 - **Integration Tests**: Deep networks, multiple forward passes, gradient flow
 
-### Running Tests
-```bash
-# Run all tests
-cargo test
-
-# Run specific module
-cargo test engine::tests
-cargo test nn::tests
-
-# Run with output
-cargo test -- --nocapture
-```
 
 ## Completed Features
 
@@ -400,23 +390,8 @@ cargo test -- --nocapture
 - **Scalability**: Suitable for small networks and educational purposes
 - **Visualization**: Large graphs (>100 nodes) may be slow to render
 
-## Dependencies
 
-```toml
-[dependencies]
-rand = "0.9.2"  # For random weight initialization
-```
 
-No other dependencies! Pure Rust implementation.
-
-## Contributing
-
-This is an educational project. Key areas for contribution:
-1. Implement optimizers (SGD, Adam)
-2. Add proper ReLU/LeakyReLU with subgradients
-3. Add serialization (save/load models)
-4. Optimize performance (reduce allocations)
-5. Add more examples and tutorials
 
 ## References
 
@@ -424,7 +399,3 @@ This is an educational project. Key areas for contribution:
 - Andrej Karpathy's micrograd video tutorial: https://www.youtube.com/watch?v=VMj-3S1tku0
 - "Automatic Differentiation" concepts and algorithms
 - Graphviz visualization: https://graphviz.org/
-
-## Acknowledgments
-
-This project is inspired by Andrej Karpathy's micrograd and created as part of an AI course term project. The goal is to understand automatic differentiation and neural networks from first principles using Rust's type system and memory safety guarantees.

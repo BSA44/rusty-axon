@@ -12,3 +12,12 @@ pub mod optim;
 // Re-export the most commonly used types so downstream crates can simply
 // `use rusty_axon::Value;`.
 pub use engine::value::Value;
+pub use nn::visualization::render_network_to;
+pub use nn::activations::Activations;
+pub use nn::mlp::Mlp;
+pub use nn::layer::Layer;
+pub use nn::neuron::Neuron;
+pub use nn::visualization::NetworkVisualizationConfig;
+pub use nn::visualization::save_network_graph;
+pub use nn::visualization::check_graphviz;
+

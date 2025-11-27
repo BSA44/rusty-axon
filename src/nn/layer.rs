@@ -7,7 +7,6 @@ use crate::nn::activations::Activations;
 pub struct Layer {
     neurons: Vec<Neuron>,
     activation: Activations,
-    // TODO: store a collection of neurons and optional layer-level metadata.
 }
 
 impl Layer {
@@ -37,5 +36,15 @@ impl Layer {
         self.neurons.iter()
             .flat_map(|neuron| neuron.parameters())
             .collect()
+    }
+
+    /// Get the activation function used by this layer
+    pub fn get_activation(&self) -> &Activations {
+        &self.activation
+    }
+
+    /// Get the number of neurons (output size) in this layer
+    pub fn num_neurons(&self) -> usize {
+        self.neurons.len()
     }
 }

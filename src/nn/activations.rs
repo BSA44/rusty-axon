@@ -1,7 +1,8 @@
 
 use crate::engine::Node;
-#[derive(Debug, Clone)]
+use std::fmt;
 
+#[derive(Debug, Clone)]
 pub enum Activations {
     Sigmoid,
     //ReLU, add them later
@@ -32,6 +33,17 @@ impl Activations {
             Activations::None => {
                 x
             }
+        }
+    }
+}
+
+impl fmt::Display for Activations {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Activations::Sigmoid => write!(f, "Sigmoid"),
+            Activations::Tanh => write!(f, "Tanh"),
+            Activations::Swish => write!(f, "Swish"),
+            Activations::None => write!(f, "Linear"),
         }
     }
 }

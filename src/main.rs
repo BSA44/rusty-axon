@@ -109,10 +109,47 @@ fn main() {
         println!("\n   View them at: http://www.webgraphviz.com/");
     }
  */
+println!("=== Example 1: Simple Neural Network (2-4-1) ===");
 let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
-let inputs = vec![Node::from(1.0), Node::from(2.0)];
-let mut output = mlp.forward(&inputs)[0].clone();
-output.backward();
+println!("Architecture: {:?}", mlp.get_architecture());
+println!("Total parameters: {}", mlp.parameters().len());
 
-output.render_png("neural_network").unwrap();
+// Visualize the network architecture (layer-oriented)
+println!("\n📊 Generating layer-oriented network visualization...");
+mlp.render_network_png("network_architecture").unwrap();
+mlp.render_network_svg("network_architecture_svg").unwrap();
+
+// Forward pass
+let inputs = vec![Node::from(1.0), Node::from(2.0)];
+let outputs = mlp.forward(&inputs);
+println!("\nForward pass:");
+println!("  Input: [{}, {}]", inputs[0].get_value(), inputs[1].get_value());
+println!("  Output: {}", outputs[0].get_value());
+
+// Backward pass
+let mut output = outputs[0].clone();
+output.backward();
+println!("\nBackward pass completed!");
+println!("  Output gradient: {}", output.get_gradient());
+
+// You can still visualize the detailed computation graph if needed
+println!("\n📊 Generating detailed computation graph...");
+output.render_png("computation_graph").unwrap();
+
+println!("\n=== Example 2: Deep Neural Network (3-8-8-4-1) ===");
+let deep_mlp = Mlp::new(
+    &[3, 8, 8, 4, 1],
+    &[Activations::Tanh, Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
+);
+println!("Architecture: {:?}", deep_mlp.get_architecture());
+println!("Total parameters: {}", deep_mlp.parameters().len());
+
+println!("\n📊 Generating deep network visualization...");
+deep_mlp.render_network_png("deep_network").unwrap();
+
+println!("\n✨ Done! Generated visualizations:");
+println!("  • network_architecture.png - Simple 2-4-1 network (layer view)");
+println!("  • network_architecture_svg.svg - Same as SVG");
+println!("  • computation_graph.png - Detailed scalar computation graph");
+println!("  • deep_network.png - Deep 3-8-8-4-1 network (layer view)");
 }
