@@ -56,6 +56,9 @@ impl Node {
         Self { value: Rc::new(RefCell::new(Value::new(value, operation))) }
     }
 
+    pub fn set_value(&mut self, value: f64) {
+        self.value.borrow_mut().set_value(value);
+    }
     
     // to get the value of the node
     pub fn get_value(&self) -> f64 {
@@ -571,6 +574,9 @@ impl Value {
         Self { value, gradient: 0.0, operation }
     }
 
+    pub fn set_value(&mut self, value: f64) {
+        self.value = value;
+    }
 
     pub fn get_value(&self) -> f64 {
         self.value

@@ -1,6 +1,7 @@
 //! Example demonstrating custom color schemes for neural network visualization.
 
-use rusty_axon::nn::{Mlp, Activations};
+use rusty_axon::nn::mlp::Mlp;
+use rusty_axon::nn::activations::Activations;
 use rusty_axon::nn::visualization::NetworkVisualizationConfig;
 
 fn main() {

@@ -8,6 +8,7 @@
 pub mod engine;
 pub mod nn;
 pub mod optim;
+pub mod loss;
 
 // Re-export the most commonly used types so downstream crates can simply
 // `use rusty_axon::Value;`.
