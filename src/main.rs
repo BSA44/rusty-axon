@@ -1,6 +1,7 @@
 use rusty_axon::engine::{ComputationGraph, Node};
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
+use rusty_axon::optim::optimizer::Optimizer;  // Import the trait
 
 fn main() {
     println!("=== Rusty-Axon: Autograd Engine Demo ===\n");
@@ -108,7 +109,7 @@ fn main() {
         println!("  • example3_neuron.dot");
         println!("\n   View them at: http://www.webgraphviz.com/");
     }
- */
+
 println!("=== Example 1: Simple Neural Network (2-4-1) ===");
 let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
 println!("Architecture: {:?}", mlp.get_architecture());
@@ -136,20 +137,101 @@ println!("  Output gradient: {}", output.get_gradient());
 println!("\n📊 Generating detailed computation graph...");
 output.render_png("computation_graph").unwrap();
 
-println!("\n=== Example 2: Deep Neural Network (3-8-8-4-1) ===");
-let deep_mlp = Mlp::new(
-    &[3, 8, 8, 4, 1],
-    &[Activations::Tanh, Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
-);
-println!("Architecture: {:?}", deep_mlp.get_architecture());
-println!("Total parameters: {}", deep_mlp.parameters().len());
+ */
+    // ===========================================
+    // TRAINING EXAMPLE: Learning XOR Problem
+    // ===========================================
+    println!("=== Training Example: XOR Problem ===\n");
 
-println!("\n📊 Generating deep network visualization...");
-deep_mlp.render_network_png("deep_network").unwrap();
+    // XOR Dataset (hardcoded)
+    // Input: [x1, x2] -> Output: x1 XOR x2
+    let training_data: Vec<(Vec<f64>, f64)> = vec![
+        (vec![0.0, 0.0], 0.0),  // 0 XOR 0 = 0
+        (vec![0.0, 1.0], 1.0),  // 0 XOR 1 = 1
+        (vec![1.0, 0.0], 1.0),  // 1 XOR 0 = 1
+        (vec![1.0, 1.0], 0.0),  // 1 XOR 1 = 0
+    ];
 
-println!("\n✨ Done! Generated visualizations:");
-println!("  • network_architecture.png - Simple 2-4-1 network (layer view)");
-println!("  • network_architecture_svg.svg - Same as SVG");
-println!("  • computation_graph.png - Detailed scalar computation graph");
-println!("  • deep_network.png - Deep 3-8-8-4-1 network (layer view)");
+    // Create network: 2 inputs -> 4 hidden -> 1 output
+    let mlp = Mlp::new(
+        &[2, 4, 1],
+        &[Activations::Tanh, Activations::Sigmoid]
+    );
+    println!("Network Architecture: {:?}", mlp.get_architecture());
+    println!("Total parameters: {}", mlp.parameters().len());
+
+    // Create optimizer
+    let learning_rate = 0.5;
+    let mut optimizer = rusty_axon::optim::sgd::Sgd::new(learning_rate, mlp.parameters());
+
+    // Training hyperparameters
+    let epochs = 1000;
+    let print_every = 100;
+
+    println!("\nStarting training...");
+    println!("Learning rate: {}", learning_rate);
+    println!("Epochs: {}\n", epochs);
+
+    // Training loop
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0;
+
+        for (inputs_raw, target_raw) in &training_data {
+            // 1. Zero gradients
+            optimizer.zero_state();
+
+            // 2. Convert inputs to Nodes
+            let inputs: Vec<Node> = inputs_raw.iter()
+                .map(|&x| Node::from(x))
+                .collect();
+            let target = Node::from(*target_raw);
+
+            // 3. Forward pass
+            let outputs = mlp.forward(&inputs);
+            let prediction = outputs[0].clone();
+
+            // 4. Compute loss (MSE for single output)
+            let diff = prediction.clone() - target;
+            let mut loss = diff.pow(2.0);
+
+            // 5. Backward pass
+            loss.backward();
+
+            // 6. Update weights
+            optimizer.step();
+
+            total_loss += loss.get_value();
+        }
+
+        // Print progress
+        if epoch % print_every == 0 || epoch == epochs - 1 {
+            let avg_loss = total_loss / training_data.len() as f64;
+            println!("Epoch {:4} | Loss: {:.6}", epoch, avg_loss);
+        }
+    }
+
+    // Test the trained network
+    println!("\n=== Testing Trained Network ===\n");
+    println!("  Input     | Target | Prediction | Correct?");
+    println!("  ----------|--------|------------|----------");
+
+    for (inputs_raw, target_raw) in &training_data {
+        let inputs: Vec<Node> = inputs_raw.iter()
+            .map(|&x| Node::from(x))
+            .collect();
+        
+        let outputs = mlp.forward(&inputs);
+        let prediction = outputs[0].get_value();
+        let rounded = if prediction > 0.5 { 1.0 } else { 0.0 };
+        let correct = if (rounded - target_raw).abs() < 0.01 { "✓" } else { "✗" };
+
+        println!(
+            "  [{:.0}, {:.0}]    |   {:.0}    |   {:.4}   |    {}",
+            inputs_raw[0], inputs_raw[1], target_raw, prediction, correct
+        );
+    }
+
+    println!("\n✨ Training complete!");
+
+
 }
