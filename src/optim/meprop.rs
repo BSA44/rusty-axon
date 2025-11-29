@@ -31,7 +31,8 @@ impl Optimizer for MeProp
         {    return;    }
         
         let k = (self.top_k * (total_params as f32)).ceil() as usize;
-        let k = k.max(1);
+        let k = k.max(1).min(total_params);  // Also cap at total_params
+        
         let mut param_grads: Vec<(&mut Node, f64)> = self.parameters
             .iter_mut()
             .map(|p| {
@@ -41,6 +42,7 @@ impl Optimizer for MeProp
             .collect();
 
         param_grads.sort_by(|a,b| b.1.total_cmp(&a.1));
+
 
         for (p, _) in param_grads.into_iter().take(k) {
             p.set_value(p.get_value() - self.learning_rate * p.get_gradient());

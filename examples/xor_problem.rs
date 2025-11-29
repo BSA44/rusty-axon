@@ -2,13 +2,14 @@ use rusty_axon::engine::{ComputationGraph, Node};
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
 use rusty_axon::optim::optimizer::Optimizer;  // Import the trait
+use rusty_axon::nn::visualization::NetworkVisualizationConfig;
 
 fn main() {
     println!("=== Rusty-Axon: Autograd Engine Demo ===\n");
 
     println!("=== Training Example: XOR Problem ===\n");
 
-    // XOR Dataset (hardcoded)
+    // XOR Dataset
     // Input: [x1, x2] -> Output: x1 XOR x2
     let training_data: Vec<(Vec<f64>, f64)> = vec![
         (vec![0.0, 0.0], 0.0),  // 0 XOR 0 = 0
@@ -24,10 +25,21 @@ fn main() {
     );
     println!("Network Architecture: {:?}", mlp.get_architecture());
     println!("Total parameters: {}", mlp.parameters().len());
-
+    let edge_config = NetworkVisualizationConfig::with_colors(
+        "aliceblue", "royalblue",
+        "lavenderblush", "orchid",
+        "honeydew", "mediumseagreen",
+    ).with_edges("navy", 1.5);
+    mlp.visualize_network_with_config("network_xor", "png", &edge_config).unwrap();
     // Create optimizer
     let learning_rate = 0.5;
-    let mut optimizer = rusty_axon::optim::sgd::Sgd::new(learning_rate, mlp.parameters());
+    // Try different top_k values:
+    // 1.0 = 100% (same as SGD)
+    // 0.5 = 50% of parameters
+    //0.2 = 20% of parameters
+    let top_k = 0.5;  // Update only 50% of parameters with largest gradients
+    let mut optimizer = rusty_axon::optim::meprop::MeProp::new(learning_rate, mlp.parameters(), top_k);
+    println!("MeProp top_k: {}%", top_k * 100.0);
 
     // Training hyperparameters
     let epochs = 1000;
@@ -96,7 +108,7 @@ fn main() {
         );
     }
 
-    println!("\n Training complete!");
+    println!("\nTraining complete!");
 
 
 }
