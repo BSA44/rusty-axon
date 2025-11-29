@@ -5,6 +5,36 @@ All notable changes to the Rusty-Axon project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2024-11-29
+
+### Added - Optimizers
+- ✅ `Optimizer` trait for extensible optimizer design
+- ✅ `Sgd` - Stochastic Gradient Descent with learning rate
+- ✅ `MeProp` - Sparse backpropagation optimizer ([ICML 2017 paper](https://proceedings.mlr.press/v70/sun17c.html))
+  - Updates only top-k% parameters by gradient magnitude
+  - Configurable sparsity (top_k parameter)
+  - Reduces computation while often improving generalization
+
+### Added - Loss Functions
+- ✅ `Loss` trait for extensible loss function design
+- ✅ `MeanSquaredError` (MSE) - Standard regression loss
+- ✅ `RootMeanSquaredError` (RMSE) - MSE with sqrt for interpretable units
+- ✅ `CrossEntropy` - Classification loss with:
+  - Softmax computation (numerically stable)
+  - Label smoothing support
+  - Multi-class support
+
+### Added - Training Examples
+- ✅ XOR problem example (`examples/xor_problem.rs`)
+- ✅ Complete training loop demonstration
+- ✅ Comparison between SGD and MeProp optimizers
+
+### Changed
+- Updated `lib.rs` to export new loss and optim modules
+- Added `set_value()` method to `Node` for parameter updates
+
+---
+
 ## [0.1.0] - 2024-11-26
 
 ### Added - Core Engine
@@ -72,27 +102,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Design Pattern**: Computation graph with topological sort
 
 ### Known Limitations
-- ⚠️ No optimizer implementation yet (manual parameter updates)
-- ⚠️ No loss functions
 - ⚠️ ReLU family needs special gradient handling
 - ⚠️ Scalar operations only (no tensors/matrices)
 - ⚠️ No GPU support
 - ⚠️ No model serialization
-- ⚠️ No mini-batch support
+- ⚠️ No mini-batch support (but MeProp provides similar benefits)
 
 ## [Unreleased] - Planned Features
 
 ### To Be Implemented
-- [ ] SGD optimizer with learning rate
-- [ ] Loss functions (MSE, Cross-Entropy)
-- [ ] Training loop utilities
+- [ ] Adam optimizer
 - [ ] Proper ReLU implementation
 - [ ] More activation functions (LeakyReLU, ELU, GELU)
 - [ ] Model serialization (save/load)
-- [ ] Mini-batch support
 - [ ] Gradient clipping
 - [ ] Learning rate scheduling
-- [ ] Real-world examples (XOR, classification)
+- [ ] More examples (classification, regression)
 
 ### Future Enhancements
 - [ ] Tensor operations (move beyond scalars)
@@ -106,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **v0.2.0** (2024-11-29): Added optimizers (SGD, MeProp), loss functions (MSE, RMSE, CrossEntropy), training examples
 - **v0.1.0** (2024-11-26): Initial release with core engine, neural networks, and visualization
 - **v0.0.1** (2024-11-XX): Project skeleton
 

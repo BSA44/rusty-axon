@@ -11,6 +11,8 @@ An educational project implementing automatic differentiation (autograd) and neu
 
 - ✅ **Scalar Autograd Engine** - Automatic differentiation with gradient accumulation
 - ✅ **Neural Networks** - Neuron, Layer, and MLP (Multi-Layer Perceptron)
+- ✅ **Optimizers** - SGD and MeProp (sparse backpropagation from [ICML 2017](https://proceedings.mlr.press/v70/sun17c.html))
+- ✅ **Loss Functions** - MSE, RMSE, CrossEntropy (with label smoothing)
 - ✅ **Activation Functions** - Sigmoid, Tanh, Swish
 - ✅ **Dual Visualization** - Layer-oriented architecture + detailed computation graphs (PNG, SVG, PDF)
 - ✅ **Pure Rust** - Zero-cost abstractions, no Python dependencies
@@ -24,91 +26,51 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rusty-axon = "0.1.0"
+rusty-axon = "0.2.0"
 ```
 
 Or clone and run:
 
 ```bash
-git clone https://github.com/yourusername/rusty-axon.git
+git clone https://github.com/BSA44/rusty-axon.git
 cd rusty-axon
 cargo run
 ```
 
-### Basic Example
+### Quick Example
 
 ```rust
 use rusty_axon::engine::Node;
 
-fn main() {
-    // Create scalar values
-    let a = Node::from(2.0);
-    let b = Node::from(-3.0);
-    let c = Node::from(10.0);
-    
-    // Build computation graph
-    let d = a.clone() * b.clone();
-    let e = d + c.clone();
-    let mut f = e.pow(2.0);
-    
-    // Backpropagation
-    f.backward();
-    
-    // Access gradients
-    println!("df/da = {}", a.get_gradient()); // -60.0
-    println!("df/db = {}", b.get_gradient()); // 40.0
-    println!("df/dc = {}", c.get_gradient()); // 8.0
-}
+let x = Node::from(2.0);
+let mut y = x.clone().pow(3.0);  // y = x³
+y.backward();
+println!("dy/dx = {}", x.get_gradient()); // 12.0 (3x² at x=2)
 ```
 
-### Neural Network Example
+## 📂 Examples
 
-```rust
-use rusty_axon::engine::Node;
-use rusty_axon::nn::{Mlp, Activations};
+Run examples with `cargo run --example <name>`:
 
-fn main() {
-    // Create a 2-4-4-1 neural network
-    let mlp = Mlp::new(
-        &[2, 4, 4, 1],
-        &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
-    );
-    
-    // Forward pass
-    let inputs = vec![Node::from(1.0), Node::from(2.0)];
-    let outputs = mlp.forward(&inputs);
-    
-    // Backward pass
-    let mut output = outputs[0].clone();
-    output.backward();
-    
-    println!("Output: {}", output.get_value());
-    println!("Parameters: {}", mlp.parameters().len());
-}
+| Example | Description | Command |
+|---------|-------------|---------|
+| **basic_autograd** | Core autograd operations | `cargo run --example basic_autograd` |
+| **neural_network** | Creating and using MLPs | `cargo run --example neural_network` |
+| **xor_problem** | Complete training loop with XOR | `cargo run --example xor_problem` |
+| **graph_visualization** | Computation graph rendering | `cargo run --example graph_visualization` |
+| **network_visualization** | Layer-oriented network diagrams | `cargo run --example network_visualization` |
+| **custom_colors** | Custom visualization themes | `cargo run --example custom_colors` |
+
+### Example Output (XOR Training)
+
 ```
+Network Architecture: [2, 4, 1]
+Epoch    0 | Loss: 0.312
+Epoch  500 | Loss: 0.001
+Epoch  999 | Loss: 0.0003
 
-### Visualization Example
-
-```rust
-use rusty_axon::engine::Node;
-use rusty_axon::nn::{Mlp, Activations};
-
-fn main() {
-    // Create a neural network
-    let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
-    
-    // Visualize network architecture (layer-oriented view)
-    mlp.render_network_png("architecture").unwrap();  // Clean layer diagram
-    
-    // Or visualize computation graph (detailed scalar operations)
-    let inputs = vec![Node::from(1.0), Node::from(2.0)];
-    let mut output = mlp.forward(&inputs)[0].clone();
-    output.backward();
-    output.render_png("computation").unwrap();  // Detailed computation graph
-}
+Testing: [0,0]→0.01 ✓  [0,1]→0.98 ✓  [1,0]→0.98 ✓  [1,1]→0.02 ✓
 ```
-
-**Layer-Oriented View** (architecture.png):
 
 ![Network Architecture](network_architecture.png)
 
@@ -130,71 +92,27 @@ This library is perfect for:
 
 ## 📖 Core Concepts
 
-### Autograd Engine
+| Component | Description |
+|-----------|-------------|
+| **Node** | Scalar value with automatic gradient tracking |
+| **Mlp** | Multi-layer perceptron (feedforward network) |
+| **Optimizer** | SGD or MeProp for weight updates |
+| **Loss** | MSE, RMSE, or CrossEntropy |
 
-The engine automatically builds a computation graph and computes gradients:
+**Supported Operations:** `+`, `-`, `*`, `/`, `pow`, `exp`, `log`, `neg`
 
-```rust
-let x = Node::from(2.0);
-let y = x.pow(3.0);  // y = x³
-y.backward();         // dy/dx = 3x² = 12.0
-println!("{}", x.get_gradient()); // 12.0
-```
-
-
-
-### Neural Networks
-
-Build deep networks with ease:
-
-```rust
-// Architecture: 3 inputs → 8 hidden → 8 hidden → 4 hidden → 1 output
-let network = Mlp::new(
-    &[3, 8, 8, 4, 1],
-    &[
-        Activations::Tanh,
-        Activations::Tanh,
-        Activations::Tanh,
-        Activations::Sigmoid
-    ]
-);
-```
+**Activations:** Sigmoid, Tanh, Swish, Linear
 
 ## 📊 Visualization
 
-Rusty-Axon provides **two types of visualization**:
+Two visualization modes (requires [Graphviz](https://graphviz.org/download/)):
 
-### 1. Layer-Oriented Architecture View (NEW!)
+| Type | Method | Use Case |
+|------|--------|----------|
+| **Layer View** | `mlp.render_network_png("net")` | Architecture diagrams |
+| **Computation Graph** | `output.render_png("graph")` | Debugging gradients |
 
-```rust
-// Visualize network architecture
-let mlp = Mlp::new(&[2, 4, 4, 1], &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]);
-mlp.render_network_png("architecture").unwrap();
-```
-
-**Features:**
-- 🏗️ Clear layer structure (Input → Hidden → Output)
-- 🎨 Color-coded layers (Blue=Input, Yellow=Hidden, Green=Output)
-- 🔤 Shows activation functions
-- 📊 Perfect for presentations and documentation
-
-### 2. Computation Graph View (Original)
-
-```rust
-// After backward pass, visualize detailed scalar operations
-output.backward();
-output.render_svg("computation_graph").unwrap();
-```
-
-**Features:**
-- 🎨 Color-coded nodes by gradient magnitude (red=high, blue=low)
-- 📦 Shows values and gradients in each node
-- 🔄 Displays operation types and connections
-- 🔬 Perfect for debugging backpropagation
-
-**Formats:** PNG, SVG, PDF, JPG
-
-Requires [Graphviz](https://graphviz.org/download/) for automatic rendering.
+See [examples/network_visualization.rs](examples/network_visualization.rs) for details.
 
 ## 🧪 Running Tests
 
@@ -229,35 +147,49 @@ rusty-axon/
 │   │   ├── layer.rs     # Fully connected layer
 │   │   ├── mlp.rs       # Multi-layer perceptron
 │   │   ├── activations.rs # Activation functions
+│   │   ├── visualization.rs # Network visualization
 │   │   └── tests.rs     # NN tests
-│   └── optim/           # Optimizers (TODO)
+│   ├── optim/           # Optimizers
+│   │   ├── optimizer.rs # Optimizer trait
+│   │   ├── sgd.rs       # Stochastic Gradient Descent
+│   │   └── meprop.rs    # Sparse backpropagation (MeProp)
+│   └── loss/            # Loss functions
+│       ├── loss.rs      # Loss trait
+│       ├── mse.rs       # Mean Squared Error
+│       ├── rmse.rs      # Root Mean Squared Error
+│       └── cross_entropy.rs # CrossEntropy with label smoothing
 ├── examples/            # Example code
+│   ├── xor_problem.rs   # XOR training example
+│   └── ...
 └── AGENTS.md           # Architecture documentation
 ```
 
 ## 🎓 Learning Path
 
-1. **Start with basics** - `cargo run` to see examples
-2. **Read AGENTS.md** - Understand the architecture
-3. **Run tests** - `cargo test` to see how it works
-4. **Visualize** - Create graphs to see gradient flow
-5. **Build networks** - Experiment with different architectures
-6. **Implement optimizer** - Add SGD as next step
+1. `cargo run --example basic_autograd` - Understand autograd
+2. `cargo run --example neural_network` - Build networks
+3. `cargo run --example xor_problem` - Train a model
+4. `cargo run --example graph_visualization` - Visualize gradients
+5. Read [AGENTS.md](AGENTS.md) for architecture details
 
 ## 🚧 Roadmap
 
 ### Current Status
 - ✅ Autograd engine with 8 operations
 - ✅ Neural network building blocks
-- ✅ Graph visualization
+- ✅ Graph visualization (layer + computation)
+- ✅ SGD optimizer
+- ✅ MeProp optimizer (sparse backpropagation)
+- ✅ Loss functions (MSE, RMSE, CrossEntropy)
+- ✅ XOR training example
 - ✅ Comprehensive testing
 
 ### Coming Soon
-- ⏳ SGD optimizer
-- ⏳ Loss functions (MSE, Cross-Entropy)
-- ⏳ Training loop utilities
-- ⏳ Real-world examples (XOR, classification)
-- ⏳ Model serialization
+- ⏳ Adam optimizer
+- ⏳ Learning rate scheduling
+- ⏳ More activation functions (ReLU, LeakyReLU, GELU)
+- ⏳ Model serialization (save/load)
+- ⏳ More examples (classification, regression)
 
 ## ⚠️ Limitations
 
@@ -278,8 +210,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 - **Andrej Karpathy** - For [micrograd](https://github.com/karpathy/micrograd) and the amazing [tutorial](https://www.youtube.com/watch?v=VMj-3S1tku0)
 - **Rust Community** - For excellent documentation and tools
-- **Graphviz** - For visualization capabilities
+
 
 **Built with ❤️ in Rust for learning and education.**
 
-*Star ⭐ this repo if you find it helpful!*
