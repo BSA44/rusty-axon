@@ -13,10 +13,10 @@ An educational project implementing automatic differentiation (autograd) and neu
 - ✅ **Neural Networks** - Neuron, Layer, and MLP (Multi-Layer Perceptron)
 - ✅ **Optimizers** - SGD and MeProp (sparse backpropagation from [ICML 2017](https://proceedings.mlr.press/v70/sun17c.html))
 - ✅ **Loss Functions** - MSE, RMSE, CrossEntropy (with label smoothing)
-- ✅ **Activation Functions** - Sigmoid, Tanh, Swish
+- ✅ **Activation Functions** - Sigmoid, Tanh, ReLU, Swish
 - ✅ **Dual Visualization** - Layer-oriented architecture + detailed computation graphs (PNG, SVG, PDF)
 - ✅ **Pure Rust** - Zero-cost abstractions, no Python dependencies
-- ✅ **Comprehensive Tests** - 40+ tests covering all operations
+- ✅ **Comprehensive Tests** - 45+ tests covering all operations
 
 ## 🚀 Quick Start
 
@@ -56,7 +56,8 @@ Run examples with `cargo run --example <name>`:
 |---------|-------------|---------|
 | **basic_autograd** | Core autograd operations | `cargo run --example basic_autograd` |
 | **neural_network** | Creating and using MLPs | `cargo run --example neural_network` |
-| **xor_problem** | Complete training loop with XOR | `cargo run --example xor_problem` |
+| **xor_problem** | Complete training loop with XOR (Tanh) | `cargo run --example xor_problem` |
+| **xor_relu** | XOR training with ReLU activation | `cargo run --example xor_relu` |
 | **graph_visualization** | Computation graph rendering | `cargo run --example graph_visualization` |
 | **network_visualization** | Layer-oriented network diagrams | `cargo run --example network_visualization` |
 | **custom_colors** | Custom visualization themes | `cargo run --example custom_colors` |
@@ -99,9 +100,9 @@ This library is perfect for:
 | **Optimizer** | SGD or MeProp for weight updates |
 | **Loss** | MSE, RMSE, or CrossEntropy |
 
-**Supported Operations:** `+`, `-`, `*`, `/`, `pow`, `exp`, `log`, `neg`
+**Supported Operations:** `+`, `-`, `*`, `/`, `pow`, `exp`, `log`, `neg`, `relu`
 
-**Activations:** Sigmoid, Tanh, Swish, Linear
+**Activations:** Sigmoid, Tanh, ReLU, Swish, Linear
 
 ## 📊 Visualization
 
@@ -129,7 +130,7 @@ cargo test -- --nocapture
 ```
 
 **Test Coverage:**
-- ✅ 25+ engine tests (operations, chain rule, gradient accumulation)
+- ✅ 30+ engine tests (operations, chain rule, gradient accumulation, ReLU)
 - ✅ 15+ neural network tests (forward/backward passes)
 - ✅ Integration tests (deep networks, complex graphs)
 
@@ -159,7 +160,8 @@ rusty-axon/
 │       ├── rmse.rs      # Root Mean Squared Error
 │       └── cross_entropy.rs # CrossEntropy with label smoothing
 ├── examples/            # Example code
-│   ├── xor_problem.rs   # XOR training example
+│   ├── xor_problem.rs   # XOR training (Tanh activation)
+│   ├── xor_relu.rs      # XOR training (ReLU activation)
 │   └── ...
 └── AGENTS.md           # Architecture documentation
 ```
@@ -175,7 +177,7 @@ rusty-axon/
 ## 🚧 Roadmap
 
 ### Current Status
-- ✅ Autograd engine with 8 operations
+- ✅ Autograd engine with 9 operations
 - ✅ Neural network building blocks
 - ✅ Graph visualization (layer + computation)
 - ✅ SGD optimizer
@@ -187,7 +189,7 @@ rusty-axon/
 ### Coming Soon
 - ⏳ Adam optimizer
 - ⏳ Learning rate scheduling
-- ⏳ More activation functions (ReLU, LeakyReLU, GELU)
+- ⏳ More activation functions (LeakyReLU, GELU)
 - ⏳ Model serialization (save/load)
 - ⏳ More examples (classification, regression)
 

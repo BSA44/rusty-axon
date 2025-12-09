@@ -19,12 +19,12 @@ src/
 ├── engine/
 │   ├── value.rs      # Node, Value, operators, backward(), visualization
 │   ├── ops.rs        # Operation enum (Add, Mul, Pow, Exp, etc.)
-│   └── tests.rs      # 25+ autograd tests
+│   └── tests.rs      # 30+ autograd tests
 ├── nn/
 │   ├── neuron.rs     # Single neuron (weights, bias, activation)
 │   ├── layer.rs      # Fully connected layer
 │   ├── mlp.rs        # Multi-layer perceptron
-│   ├── activations.rs # Sigmoid, Tanh, Swish, None
+│   ├── activations.rs # Sigmoid, Tanh, ReLU, Swish, None
 │   ├── visualization.rs # Layer-oriented network diagrams
 │   └── tests.rs      # 15+ NN tests
 ├── optim/
@@ -42,7 +42,8 @@ src/
 examples/
 ├── basic_autograd.rs       # Core autograd demo
 ├── neural_network.rs       # MLP usage
-├── xor_problem.rs          # Complete training loop
+├── xor_problem.rs          # Complete training loop (Tanh)
+├── xor_relu.rs             # XOR with ReLU activation
 ├── graph_visualization.rs  # Computation graphs
 ├── network_visualization.rs # Layer diagrams
 └── custom_colors.rs        # Custom themes
@@ -69,6 +70,7 @@ pub enum Operation {
     Exp { exponent: Node },
     Neg { operand: Node },
     Log { base: f64, operand: Node },
+    ReLU { input: Node },
     None,  // Leaf nodes
 }
 ```
@@ -111,18 +113,18 @@ pub trait Loss {
 ## Implemented vs TODO
 
 ### ✅ Done
-- All arithmetic ops (+, -, *, /, pow, exp, log, neg)
+- All arithmetic ops (+, -, *, /, pow, exp, log, neg, relu)
 - Neuron, Layer, MLP
-- Activations: Sigmoid, Tanh, Swish
+- Activations: Sigmoid, Tanh, ReLU, Swish
 - SGD optimizer
 - MeProp optimizer (sparse backprop)
 - MSE, RMSE, CrossEntropy loss
 - Graph visualization (DOT → PNG/SVG/PDF)
-- XOR training example
+- XOR training examples (Tanh & ReLU)
 
 ### ⏳ TODO
 - Adam optimizer
-- ReLU activation (needs conditional gradient handling)
+- LeakyReLU, GELU activations
 - Model save/load
 - Learning rate scheduling
 - Multi-threading
@@ -142,7 +144,8 @@ cargo test nn           # Neural networks only
 ## Running Examples
 
 ```bash
-cargo run --example xor_problem
+cargo run --example xor_problem    # XOR with Tanh
+cargo run --example xor_relu       # XOR with ReLU
 cargo run --example basic_autograd
 cargo run --example neural_network
 ```

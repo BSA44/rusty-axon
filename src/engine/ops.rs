@@ -15,6 +15,7 @@ pub enum Operation {
     Exp { exponent: Node },
     Neg { operand: Node },
     Log { base: f64, operand: Node },
+    ReLU { input: Node },
     None,
 }
 
@@ -30,6 +31,7 @@ impl Display for Operation {
             Operation::Exp { .. } => "EXP",
             Operation::Neg { .. } => "NEG",
             Operation::Log { .. } => "LOG",
+            Operation::ReLU { .. } => "RELU",
             Operation::None => "NONE",
         })
     }

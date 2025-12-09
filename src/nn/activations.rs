@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum Activations {
     Sigmoid,
-    //ReLU, add them later
+    ReLU,
     Tanh,
     //LeakyReLU(f64),
     //ELU(f64),
@@ -19,6 +19,10 @@ impl Activations {
             Activations::Sigmoid => 
             {
              1.0 / (1.0 + (-x).exp())
+            },
+            Activations::ReLU =>
+            {
+                x.relu()
             },
             Activations::Tanh =>
             {
@@ -41,6 +45,7 @@ impl fmt::Display for Activations {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Activations::Sigmoid => write!(f, "Sigmoid"),
+            Activations::ReLU => write!(f, "ReLU"),
             Activations::Tanh => write!(f, "Tanh"),
             Activations::Swish => write!(f, "Swish"),
             Activations::None => write!(f, "Linear"),

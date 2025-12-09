@@ -111,6 +111,70 @@ mod tests {
     }
 
     #[test]
+    fn test_relu_positive() {
+        // f(x) = ReLU(x) where x > 0
+        // df/dx = 1 when x > 0
+        let x = Node::from(3.0);
+        let mut f = x.relu();
+        f.backward();
+
+        assert_close(f.get_value(), 3.0, "forward value");
+        assert_close(x.get_gradient(), 1.0, "df/dx");
+    }
+
+    #[test]
+    fn test_relu_negative() {
+        // f(x) = ReLU(x) where x < 0
+        // df/dx = 0 when x < 0
+        let x = Node::from(-3.0);
+        let mut f = x.relu();
+        f.backward();
+
+        assert_close(f.get_value(), 0.0, "forward value");
+        assert_close(x.get_gradient(), 0.0, "df/dx");
+    }
+
+    #[test]
+    fn test_relu_zero() {
+        // f(x) = ReLU(x) where x = 0
+        // df/dx = 0 at x = 0 (by convention)
+        let x = Node::from(0.0);
+        let mut f = x.relu();
+        f.backward();
+
+        assert_close(f.get_value(), 0.0, "forward value");
+        assert_close(x.get_gradient(), 0.0, "df/dx");
+    }
+
+    #[test]
+    fn test_relu_chain_rule() {
+        // f(x) = ReLU(2x + 1)
+        // For x = 1: 2x + 1 = 3 > 0, so ReLU(3) = 3
+        // df/dx = 1 * 2 = 2 (chain rule)
+        let x = Node::from(1.0);
+        let inner = x.clone() * 2.0 + 1.0;
+        let mut f = inner.relu();
+        f.backward();
+
+        assert_close(f.get_value(), 3.0, "forward value");
+        assert_close(x.get_gradient(), 2.0, "df/dx");
+    }
+
+    #[test]
+    fn test_relu_chain_rule_negative() {
+        // f(x) = ReLU(2x + 1)
+        // For x = -2: 2x + 1 = -3 < 0, so ReLU(-3) = 0
+        // df/dx = 0 * 2 = 0 (gradient killed)
+        let x = Node::from(-2.0);
+        let inner = x.clone() * 2.0 + 1.0;
+        let mut f = inner.relu();
+        f.backward();
+
+        assert_close(f.get_value(), 0.0, "forward value");
+        assert_close(x.get_gradient(), 0.0, "df/dx");
+    }
+
+    #[test]
     fn test_chain_rule_simple() {
         // f(x) = (x + 1)²
         // df/dx = 2(x + 1) = 2x + 2
