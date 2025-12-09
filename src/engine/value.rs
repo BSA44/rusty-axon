@@ -127,6 +127,9 @@ impl Node {
             Operation::Log { base:_ ,operand } => {
                 operand.build_topo_recursive(topo, visited);
             },
+            Operation::ReLU { input } => {
+                input.build_topo_recursive(topo, visited);
+            },
             Operation::None => {
             }
         }
@@ -188,6 +191,15 @@ impl Node {
                     drop(node_borrow);
                     operand.add_gradient(grad/(operand.get_value()*base.ln()));
                 },
+                Operation::ReLU { input } =>
+                {
+                    drop(node_borrow);
+                    // ReLU gradient: 1 if input > 0, else 0
+                    if input.get_value() > 0.0 {
+                        input.add_gradient(grad);
+                    }
+                    // else gradient is 0, so we don't add anything
+                },
                 Operation::None =>
                 {
                     drop(node_borrow);
@@ -207,6 +219,11 @@ impl Node {
 
     pub fn log(&self, base: f64) -> Node {
         Node::with_operation(self.get_value().log(base), Operation::Log { base, operand: self.clone() })
+    }
+
+    pub fn relu(&self) -> Node {
+        let value = self.get_value();
+        Node::with_operation(value.max(0.0), Operation::ReLU { input: self.clone() })
     }
 
     /// Get unique identifier for this node based on its memory address
@@ -368,6 +385,18 @@ impl Node {
                 operand.build_dot_recursive(dot, visited);
                 
                 dot.push_str(&format!("    {} -> {};\n", operand.node_id(), op_id));
+                dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            },
+            Operation::ReLU { input } => {
+                let op_id = format!("{}_relu", id);
+                dot.push_str(&format!(
+                    "    {} [label=\"ReLU\" shape=circle fillcolor=lightsalmon];\n",
+                    op_id
+                ));
+                
+                input.build_dot_recursive(dot, visited);
+                
+                dot.push_str(&format!("    {} -> {};\n", input.node_id(), op_id));
                 dot.push_str(&format!("    {} -> {};\n", op_id, id));
             },
             Operation::None => {
