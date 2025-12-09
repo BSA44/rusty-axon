@@ -3,7 +3,7 @@ use rusty_axon::engine::Node;
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
 use rusty_axon::optim::optimizer::Optimizer;
-use rusty_axon::optim::sgd::Sgd;
+use rusty_axon::optim::meprop::MeProp;
 use rusty_axon::loss::loss::Loss;
 use rusty_axon::loss::cross_entropy::CrossEntropy;
 use std::time::Instant;
@@ -196,10 +196,11 @@ fn main() {
     
     // Setup loss function and optimizer
     let loss_fn = CrossEntropy::new(0.0); // No label smoothing
-    let mut optimizer = Sgd::new(lr, mlp.parameters());
+    let top_k = 0.5;
+    let mut optimizer = MeProp::new(lr, mlp.parameters(), top_k);
     
     // Prepare CSV for metrics
-    let mut wtr = Writer::from_path("python-tests/rusty-axon/classification-diabetes/rust_classification_metrics.csv").unwrap();
+    let mut wtr = Writer::from_path("python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_meprop.csv").unwrap();
     wtr.write_record(&["Epoch", "Train_Loss", "Train_Acc", "Test_Loss", "Test_Acc", "F1", "Epoch_Time", "CPU_Usage", "RAM_Usage"])
         .unwrap();
     
@@ -281,5 +282,5 @@ fn main() {
     
     let total_time = start_total.elapsed().as_secs_f64();
     println!("\nTotal training time: {:.2}s", total_time);
-    println!("Metrics saved to: python-tests/rusty-axon/classification-diabetes/rust_classification_metrics.csv");
+    println!("Metrics saved to: python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_meprop.csv");
 }

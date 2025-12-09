@@ -13,8 +13,10 @@ python regression-california-housing.py
 
 ### Rust (Rusty-Axon)
 ```bash
-cargo run --release --example bench_classification_diabetes
-cargo run --release --example bench_regression_housing
+cargo run --release --example bench_classification_diabetes_sgd
+cargo run --release --example bench_classification_diabetes_meprop
+cargo run --release --example bench_regression_housing_sgd
+cargo run --release --example bench_regression_housing_meprop
 ```
 
 ⚠️ **Use `--release`** - debug builds are 10-100x slower!
@@ -47,10 +49,6 @@ This will:
   - CPU usage over time
   - RAM usage over time
   - Epoch time comparison
+  - Create a comparison summary in `python-tests/graphs/benchmark_summary.md`
 
 **Note:** Requires `matplotlib`: `pip install matplotlib`
-
-## Expected Performance
-
-**Rust should be 5-10x faster** with similar accuracy.
-
