@@ -151,15 +151,6 @@ def save_summary_to_markdown(classification_data=None, regression_data=None):
             f.write("- `regression_ram_usage.png` - RAM usage over epochs\n")
             f.write("- `regression_epoch_time.png` - Time per epoch\n")
             f.write("\n---\n\n")
-        
-        f.write("## Key Takeaways\n\n")
-        f.write("- **Performance**: Rust is 5-10x faster due to compiled, optimized code\n")
-        f.write("- **Model Quality**: Accuracy/loss metrics are similar (±5% variation expected)\n")
-        f.write("- **Differences**: Minor variations due to random initialization\n")
-        f.write("- **Safety**: Rust provides type safety & memory safety guarantees\n")
-        f.write("- **Framework**: Rusty-Axon properly implements Loss and Optimizer traits\n\n")
-        f.write("---\n\n")
-        f.write("*Built with Rust for performance and education.*\n")
 
 def compare_classification():
     """Compare classification benchmark results"""
