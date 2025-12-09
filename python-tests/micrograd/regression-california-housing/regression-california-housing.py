@@ -7,9 +7,11 @@ from micrograd.engine import Value
 from micrograd.nn import MLP
 
 # -----------------------------
-# Sigmoid helper
+# Sigmoid helper (numerically stable)
 # -----------------------------
 def sigmoid(x):
+    # Clamp extreme values to prevent overflow
+    x = np.clip(x, -500, 500)
     return np.where(x >= 0,
                     1 / (1 + np.exp(-x)),
                     np.exp(x) / (1 + np.exp(x)))
@@ -104,7 +106,7 @@ def train(path, epochs=10, batch_size=32, lr=0.01, limit=None, csv_file="trainin
     # Prepare CSV file
     with open(csv_file, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Epoch", "Loss", "RMSE", "CPU%", "RAM%", "Time_s"])
+        writer.writerow(["Epoch", "Loss", "RMSE", "CPU_Usage", "RAM_Usage", "Time_s"])
 
     for epoch in range(1, epochs + 1):
         t0 = time.time()
@@ -138,4 +140,4 @@ def train(path, epochs=10, batch_size=32, lr=0.01, limit=None, csv_file="trainin
 
 # -----------------------------
 if __name__ == "__main__":
-    model = train("dataset.csv", epochs=5, batch_size=64, lr=0.01, limit=2000)
+    model = train("dataset.csv", epochs=10, batch_size=64, lr=0.01, limit=2000)

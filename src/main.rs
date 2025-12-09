@@ -1,4 +1,4 @@
-use rusty_axon::engine::{ComputationGraph, Node};
+use rusty_axon::engine::Node;
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
 use rusty_axon::optim::optimizer::Optimizer;  // Import the trait
@@ -8,7 +8,6 @@ fn main() {
 
     // Sanity check that core structs are visible to the binary target.
     let _ = std::mem::size_of::<Node>();
-    let _ = std::mem::size_of::<ComputationGraph>();
     /*
     // Example 1: Simple expression
     println!("Example 1: Simple expression (a + b)^2");

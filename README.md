@@ -22,14 +22,7 @@ An educational project implementing automatic differentiation (autograd) and neu
 
 ### Installation
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-rusty-axon = "0.2.0"
-```
-
-Or clone and run:
+Clone and run:
 
 ```bash
 git clone https://github.com/BSA44/rusty-axon.git
@@ -77,7 +70,8 @@ Testing: [0,0]→0.01 ✓  [0,1]→0.98 ✓  [1,0]→0.98 ✓  [1,1]→0.02 ✓
 ## 📚 Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Complete architecture and implementation details
-- **[NETWORK_VISUALIZATION.md](NETWORK_VISUALIZATION.md)** - Layer-oriented network visualization guide (NEW!)
+- **[BENCHMARK.md](BENCHMARK.md)** - Performance comparison vs micrograd (NEW! 🚀)
+- **[NETWORK_VISUALIZATION.md](NETWORK_VISUALIZATION.md)** - Layer-oriented network visualization guide
 - **[VISUALIZATION.md](VISUALIZATION.md)** - Computation graph visualization guide
 - **[Examples](examples/)** - Code examples and tutorials
 

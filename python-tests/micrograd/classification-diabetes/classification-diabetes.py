@@ -117,7 +117,7 @@ if __name__ == "__main__":
     # Prepare CSV
     csv_file = open("training_metrics.csv", "w", newline="")
     writer = csv.writer(csv_file)
-    writer.writerow(["Epoch","Train_Loss","Train_Acc","Test_Loss","Test_Acc","F1","Epoch_Time","CPU_Usage"])
+    writer.writerow(["Epoch","Train_Loss","Train_Acc","Test_Loss","Test_Acc","F1","Epoch_Time","CPU_Usage","RAM_Usage"])
 
     start_total = time.time()
 
@@ -162,13 +162,14 @@ if __name__ == "__main__":
 
         epoch_time = time.time() - epoch_start
         cpu_usage = psutil.cpu_percent(interval=None)
+        ram_usage = psutil.virtual_memory().percent
 
         print(f"Epoch {epoch:2d} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
               f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f} | "
-              f"F1: {f1:.4f} | Time: {epoch_time:.2f}s | CPU: {cpu_usage:.1f}%")
+              f"F1: {f1:.4f} | Time: {epoch_time:.2f}s | CPU: {cpu_usage:.1f}% | RAM: {ram_usage:.1f}%")
 
         # Save to CSV
-        writer.writerow([epoch, train_loss, train_acc, test_loss, test_acc, f1, epoch_time, cpu_usage])
+        writer.writerow([epoch, train_loss, train_acc, test_loss, test_acc, f1, epoch_time, cpu_usage, ram_usage])
 
     csv_file.close()
     print("Total training time:", time.time() - start_total)

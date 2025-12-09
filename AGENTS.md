@@ -121,8 +121,6 @@ pub trait Loss {
 - XOR training example
 
 ### ⏳ TODO
-- Adam optimizer
-- ReLU activation (needs conditional gradient handling)
 - Model save/load
 - Learning rate scheduling
 - Multi-threading
