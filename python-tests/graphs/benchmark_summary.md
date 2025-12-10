@@ -1,6 +1,10 @@
 # Benchmark Comparison: Micrograd (Python) vs Rusty-Axon (Rust)
 
+<<<<<<< HEAD
 *Generated: 2025-12-10 21:54:00*
+=======
+*Generated: 2025-12-10 17:39:32*
+>>>>>>> master
 
 ---
 
