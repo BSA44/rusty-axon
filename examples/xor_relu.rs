@@ -42,7 +42,7 @@ fn main() {
     let mut optimizer = rusty_axon::optim::sgd::Sgd::new(learning_rate, mlp.parameters());
 
     // Training hyperparameters
-    let epochs = 1000;
+    let epochs = 2000;
     let print_every = 100;
 
     println!("\nStarting training...");
