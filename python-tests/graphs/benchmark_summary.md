@@ -1,6 +1,6 @@
 # Benchmark Comparison: Micrograd (Python) vs Rusty-Axon (Rust)
 
-*Generated: 2025-12-09 22:55:29*
+*Generated: 2025-12-10 17:39:32*
 
 ---
 
@@ -66,14 +66,3 @@
 
 ---
 
-## Key Takeaways
-
-- **Performance**: Rust is 5-10x faster due to compiled, optimized code
-- **Model Quality**: Accuracy/loss metrics are similar (±5% variation expected)
-- **Differences**: Minor variations due to random initialization
-- **Safety**: Rust provides type safety & memory safety guarantees
-- **Framework**: Rusty-Axon properly implements Loss and Optimizer traits
-
----
-
-*Built with Rust for performance and education.*

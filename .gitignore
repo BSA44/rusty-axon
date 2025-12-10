@@ -4,11 +4,11 @@ Cargo.lock
 
 # Generated visualization files
 *.dot
-*.png
-*.svg
-*.pdf
-*.jpg
-*.gif
+/*.png
+/*.svg
+/*.pdf
+/*.jpg
+/*.gif
 
 # Editor files
 .vscode/
@@ -18,5 +18,5 @@ Cargo.lock
 *~
 
 # OS files
-.DS_Store
+.DS_Storep
 Thumbs.db
