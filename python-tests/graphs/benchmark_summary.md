@@ -1,6 +1,10 @@
 # Benchmark Comparison: Micrograd (Python) vs Rusty-Axon (Rust)
 
+<<<<<<< HEAD
+*Generated: 2025-12-10 21:54:00*
+=======
 *Generated: 2025-12-10 17:39:32*
+>>>>>>> master
 
 ---
 
@@ -10,20 +14,20 @@
 
 | Metric | Python (Micrograd) | Rust SGD | Rust MeProp | Diff (SGD) | Diff (MeProp) |
 |--------|-------------------|----------|-------------|------------|---------------|
-| Train Loss | 0.376764 | 0.241679 | 0.229542 | -0.135085 | -0.147222 |
-| Train Accuracy | 0.791531 | 0.781759 | 0.781759 | -0.009772 | -0.009772 |
-| Test Loss | 0.430995 | 0.245882 | 0.251990 | -0.185113 | -0.179005 |
-| Test Accuracy | 0.740260 | 0.779221 | 0.772727 | +0.038961 | +0.032467 |
-| F1 Score | 0.600000 | 0.613636 | 0.615385 | +0.013636 | +0.015385 |
+| Train Loss | 0.383098 | 0.243230 | 0.232257 | -0.139868 | -0.150841 |
+| Train Accuracy | 0.768730 | 0.757329 | 0.781759 | -0.011401 | +0.013029 |
+| Test Loss | 0.416294 | 0.245174 | 0.264327 | -0.171120 | -0.151967 |
+| Test Accuracy | 0.753247 | 0.740260 | 0.753247 | -0.012987 | +0.000000 |
+| F1 Score | 0.586957 | 0.726027 | 0.577778 | +0.139070 | -0.009179 |
 
 ### Performance Metrics
 
 | Metric | Python | Rust SGD | Rust MeProp | Speedup SGD | Speedup MeProp |
 |--------|--------|----------|-------------|-------------|----------------|
-| **Total Training Time** | 52.28s | 5.38s | 5.61s | **9.73x** | **9.33x** |
-| Avg Time per Epoch | 1.05s | 0.11s | 0.11s | 9.73x | 9.33x |
-| Avg CPU Usage | 12.8% | 14.2% | 14.5% | - | - |
-| Avg RAM Usage | 65.5% | 65.9% | 67.8% | - | - |
+| **Total Training Time** | 35.31s | 2.31s | 2.31s | **15.31x** | **15.27x** |
+| Avg Time per Epoch | 0.71s | 0.05s | 0.05s | 15.31x | 15.27x |
+| Avg CPU Usage | 13.2% | 14.8% | 15.6% | - | - |
+| Avg RAM Usage | 19.5% | 16.7% | 16.7% | - | - |
 
 ### Generated Plots
 
@@ -44,17 +48,17 @@
 
 | Metric | Python (Micrograd) | Rust SGD | Rust MeProp | Diff (SGD) | Diff (MeProp) |
 |--------|-------------------|----------|-------------|------------|---------------|
-| Loss (MSE) | 0.000109 | 0.000169 | 0.000288 | +0.000060 | +0.000179 |
-| RMSE | 0.010433 | 0.012908 | 0.016519 | +0.002475 | +0.006086 |
+| Loss (MSE) | 0.001892 | 0.000277 | 0.000020 | -0.001615 | -0.001872 |
+| RMSE | 0.043498 | 0.016608 | 0.004503 | -0.026890 | -0.038995 |
 
 ### Performance Metrics
 
 | Metric | Python | Rust SGD | Rust MeProp | Speedup SGD | Speedup MeProp |
 |--------|--------|----------|-------------|-------------|----------------|
-| **Total Training Time** | 96.84s | 5.00s | 5.10s | **19.37x** | **18.99x** |
-| Avg Time per Epoch | 9.68s | 0.50s | 0.51s | 19.37x | 18.99x |
-| Avg CPU Usage | 21.2% | 15.4% | 15.2% | - | - |
-| Avg RAM Usage | 66.1% | 66.3% | 67.7% | - | - |
+| **Total Training Time** | 42.09s | 3.00s | 3.00s | **14.03x** | **14.03x** |
+| Avg Time per Epoch | 4.21s | 0.30s | 0.30s | 14.03x | 14.03x |
+| Avg CPU Usage | 11.8% | 12.8% | 11.8% | - | - |
+| Avg RAM Usage | 19.4% | 16.7% | 16.8% | - | - |
 
 ### Generated Plots
 
