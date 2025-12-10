@@ -199,7 +199,7 @@ fn main() {
     let mut optimizer = Sgd::new(lr, mlp.parameters());
     
     // Prepare CSV for metrics
-    let mut wtr = Writer::from_path("python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_sgd.csv").unwrap();
+    let mut wtr = Writer::from_path("python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_sgd.csv").unwrap();
     wtr.write_record(&["Epoch", "Train_Loss", "Train_Acc", "Test_Loss", "Test_Acc", "F1", "Epoch_Time", "CPU_Usage", "RAM_Usage"])
         .unwrap();
     
@@ -281,5 +281,5 @@ fn main() {
     
     let total_time = start_total.elapsed().as_secs_f64();
     println!("\nTotal training time: {:.2}s", total_time);
-    println!("Metrics saved to: python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_sgd.csv");
+    println!("Metrics saved to: python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_sgd.csv");
 }

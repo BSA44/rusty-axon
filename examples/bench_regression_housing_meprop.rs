@@ -149,7 +149,7 @@ fn main() {
     let mut optimizer = MeProp::new(lr, mlp.parameters(), top_k);
     
     // Prepare CSV for metrics
-    let mut wtr = Writer::from_path("python-tests/rusty-axon/regression-california-housing/rust_regression_metrics_meprop.csv").unwrap();
+    let mut wtr = Writer::from_path("python-tests/rusty-axon-rpi/regression-california-housing/rust_regression_metrics_meprop.csv").unwrap();
     wtr.write_record(&["Epoch", "Loss", "RMSE", "CPU_Usage", "RAM_Usage", "Time_s"])
         .unwrap();
     
@@ -229,5 +229,5 @@ fn main() {
     }
     
     wtr.flush().unwrap();
-    println!("\nMetrics saved to: python-tests/rusty-axon/regression-california-housing/rust_regression_metrics_meprop.csv");
+    println!("\nMetrics saved to: python-tests/rusty-axon-rpi/regression-california-housing/rust_regression_metrics_meprop.csv");
 }

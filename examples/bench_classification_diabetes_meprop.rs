@@ -200,7 +200,7 @@ fn main() {
     let mut optimizer = MeProp::new(lr, mlp.parameters(), top_k);
     
     // Prepare CSV for metrics
-    let mut wtr = Writer::from_path("python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_meprop.csv").unwrap();
+    let mut wtr = Writer::from_path("python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_meprop.csv").unwrap();
     wtr.write_record(&["Epoch", "Train_Loss", "Train_Acc", "Test_Loss", "Test_Acc", "F1", "Epoch_Time", "CPU_Usage", "RAM_Usage"])
         .unwrap();
     
@@ -282,5 +282,5 @@ fn main() {
     
     let total_time = start_total.elapsed().as_secs_f64();
     println!("\nTotal training time: {:.2}s", total_time);
-    println!("Metrics saved to: python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_meprop.csv");
+    println!("Metrics saved to: python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_meprop.csv");
 }
