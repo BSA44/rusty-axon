@@ -47,4 +47,38 @@ impl Layer {
     pub fn num_neurons(&self) -> usize {
         self.neurons.len()
     }
+
+    /// Get all weights as a flat Vec<f64> (all neurons concatenated)
+    pub fn get_weights(&self) -> Vec<f64> {
+        self.neurons.iter()
+            .flat_map(|n| n.get_weights())
+            .collect()
+    }
+
+    /// Create a layer with specific weight values
+    pub fn with_weights(
+        input_size: usize,
+        weights: &[f64],
+        activation: &Activations
+    ) -> Self {
+        let weights_per_neuron = input_size + 1; // +1 for bias
+        let neurons = weights.chunks(weights_per_neuron)
+            .map(|chunk| Neuron::with_weights(chunk, activation))
+            .collect();
+        
+        Self { neurons, activation: activation.clone() }
+    }
+
+    /// Set weights from a flat Vec<f64>
+    pub fn set_weights(&mut self, weights: &[f64]) {
+        let weights_per_neuron = if self.neurons.is_empty() {
+            return;
+        } else {
+            self.neurons[0].num_inputs() + 1
+        };
+        
+        for (neuron, chunk) in self.neurons.iter_mut().zip(weights.chunks(weights_per_neuron)) {
+            neuron.set_weights(chunk);
+        }
+    }
 }

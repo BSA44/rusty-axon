@@ -1,0 +1,11 @@
+Epoch,Loss,RMSE,CPU_Usage,RAM_Usage,Time_s
+1,NaN,NaN,44.3,80.8,0.3
+2,NaN,NaN,48.8,80.8,0.3
+3,NaN,NaN,51.3,80.8,0.3
+4,NaN,NaN,46.9,80.9,0.3
+5,NaN,NaN,46.3,80.8,0.3
+6,NaN,NaN,45.5,80.8,0.3
+7,NaN,NaN,50.2,81.1,0.3
+8,NaN,NaN,49.7,81.1,0.3
+9,NaN,NaN,46.9,81.0,0.3
+10,NaN,NaN,45.4,80.8,0.3

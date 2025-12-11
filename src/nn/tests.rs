@@ -254,4 +254,134 @@ mod tests {
         // Different inputs should give different outputs (probably)
         assert!((outputs1[0].get_value() - outputs2[0].get_value()).abs() > 0.01);
     }
+
+    // ========== PARALLEL TRAINING TESTS ==========
+
+    #[test]
+    fn test_parallel_trainer_creation() {
+        use crate::nn::parallel::ParallelTrainer;
+        
+        let trainer = ParallelTrainer::new(
+            0.1,
+            vec![2, 4, 1],
+            vec![Activations::Tanh, Activations::Sigmoid],
+        );
+        assert_eq!(trainer.get_learning_rate(), 0.1);
+    }
+
+    #[test]
+    fn test_parallel_xor_training() {
+        use crate::nn::mlp::Mlp;
+        use crate::nn::parallel::ParallelTrainer;
+        use crate::loss::mse::MeanSquaredError;
+        
+        let architecture = vec![2, 4, 1];
+        let activations = vec![Activations::Tanh, Activations::Sigmoid];
+        
+        let mut mlp = Mlp::new(&architecture, &activations);
+        let trainer = ParallelTrainer::new(0.5, architecture, activations);
+        let loss_fn = MeanSquaredError;
+
+        let batch: Vec<(Vec<f64>, Vec<f64>)> = vec![
+            (vec![0.0, 0.0], vec![0.0]),
+            (vec![0.0, 1.0], vec![1.0]),
+            (vec![1.0, 0.0], vec![1.0]),
+            (vec![1.0, 1.0], vec![0.0]),
+        ];
+
+        let initial_loss = trainer.train_batch(&mut mlp, &batch, &loss_fn);
+        
+        // Train for a few epochs
+        let mut final_loss = initial_loss;
+        for _ in 0..100 {
+            final_loss = trainer.train_batch(&mut mlp, &batch, &loss_fn);
+        }
+
+        // Loss should decrease
+        assert!(final_loss < initial_loss, "Loss should decrease during training");
+    }
+
+    #[test]
+    fn test_parallel_mse_convenience() {
+        use crate::nn::mlp::Mlp;
+        use crate::nn::parallel::ParallelTrainer;
+        
+        let architecture = vec![2, 4, 1];
+        let activations = vec![Activations::Tanh, Activations::Sigmoid];
+        
+        let mut mlp = Mlp::new(&architecture, &activations);
+        let trainer = ParallelTrainer::new(0.5, architecture, activations);
+
+        let batch: Vec<(Vec<f64>, f64)> = vec![
+            (vec![0.0, 0.0], 0.0),
+            (vec![0.0, 1.0], 1.0),
+            (vec![1.0, 0.0], 1.0),
+            (vec![1.0, 1.0], 0.0),
+        ];
+
+        let loss = trainer.train_batch_mse(&mut mlp, &batch);
+        assert!(loss > 0.0, "Loss should be positive");
+    }
+
+    #[test]
+    fn test_parallel_trainer_from_mlp() {
+        use crate::nn::mlp::Mlp;
+        use crate::nn::parallel::ParallelTrainer;
+        
+        let mlp = Mlp::new(
+            &[2, 4, 1],
+            &[Activations::Tanh, Activations::Sigmoid]
+        );
+        
+        let trainer = ParallelTrainer::from_mlp(0.1, &mlp);
+        assert_eq!(trainer.get_learning_rate(), 0.1);
+    }
+
+    #[test]
+    fn test_mlp_get_set_weights() {
+        use crate::nn::mlp::Mlp;
+        
+        let mut mlp = Mlp::new(
+            &[2, 4, 1],
+            &[Activations::Tanh, Activations::Sigmoid]
+        );
+        
+        // Get weights
+        let weights = mlp.get_weights();
+        assert_eq!(weights.len(), 17); // (2+1)*4 + (4+1)*1 = 17
+        
+        // Modify and set weights
+        let new_weights: Vec<f64> = weights.iter().map(|w| w + 0.1).collect();
+        mlp.set_weights(&new_weights);
+        
+        // Verify weights changed
+        let updated_weights = mlp.get_weights();
+        for (old, new) in weights.iter().zip(updated_weights.iter()) {
+            assert!((new - old - 0.1).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_mlp_with_weights() {
+        use crate::nn::mlp::Mlp;
+        
+        let architecture = vec![2, 3, 1];
+        let activations = vec![Activations::Tanh, Activations::Sigmoid];
+        
+        // Create MLP and get its weights
+        let mlp1 = Mlp::new(&architecture, &activations);
+        let weights = mlp1.get_weights();
+        
+        // Create new MLP with same weights
+        let mlp2 = Mlp::with_weights(&architecture, &activations, &weights);
+        
+        // Both should produce same output for same input
+        let inputs = vec![Node::from(0.5), Node::from(-0.3)];
+        let out1 = mlp1.forward(&inputs)[0].get_value();
+        
+        let inputs2 = vec![Node::from(0.5), Node::from(-0.3)];
+        let out2 = mlp2.forward(&inputs2)[0].get_value();
+        
+        assert!((out1 - out2).abs() < 1e-10, "MLPs with same weights should produce same output");
+    }
 }

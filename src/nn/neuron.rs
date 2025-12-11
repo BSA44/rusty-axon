@@ -43,4 +43,38 @@ impl Neuron {
         .chain(std::iter::once(self.bias.clone()))
         .collect()
     }
+
+    /// Get all weights and bias as plain f64 values (weights first, then bias)
+    pub fn get_weights(&self) -> Vec<f64> {
+        let mut weights: Vec<f64> = self.weights.iter()
+            .map(|w| w.get_value())
+            .collect();
+        weights.push(self.bias.get_value());
+        weights
+    }
+
+    /// Create a neuron with specific weight values (last value is bias)
+    pub fn with_weights(weights: &[f64], activation: &Activations) -> Self {
+        let n = weights.len() - 1; // last is bias
+        Self {
+            weights: weights[..n].iter().map(|&w| Node::from(w)).collect(),
+            bias: Node::from(weights[n]),
+            activation: activation.clone(),
+        }
+    }
+
+    /// Set weights from f64 slice (last value is bias)
+    pub fn set_weights(&mut self, weights: &[f64]) {
+        for (w, &val) in self.weights.iter_mut().zip(weights.iter()) {
+            w.set_value(val);
+        }
+        if weights.len() > self.weights.len() {
+            self.bias.set_value(weights[self.weights.len()]);
+        }
+    }
+
+    /// Get the number of input connections
+    pub fn num_inputs(&self) -> usize {
+        self.weights.len()
+    }
 }

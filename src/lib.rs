@@ -21,4 +21,8 @@ pub use nn::neuron::Neuron;
 pub use nn::visualization::NetworkVisualizationConfig;
 pub use nn::visualization::save_network_graph;
 pub use nn::visualization::check_graphviz;
+pub use nn::parallel::ParallelTrainer;
+pub use nn::parallel::set_num_threads;
+pub use nn::parallel::get_num_threads;
+pub use optim::parallel_sgd::ParallelSgd;
 

@@ -137,4 +137,59 @@ impl Mlp {
     pub fn num_layers(&self) -> usize {
         self.layer_sizes.len()
     }
+
+    /// Get all weights as a flat Vec<f64> (all layers concatenated)
+    pub fn get_weights(&self) -> Vec<f64> {
+        self.layers.iter()
+            .flat_map(|l| l.get_weights())
+            .collect()
+    }
+
+    /// Create an MLP with specific weight values
+    pub fn with_weights(
+        layer_widths: &[usize],
+        activations: &[Activations],
+        weights: &[f64]
+    ) -> Self {
+        let mut mlp = Self {
+            layers: Vec::new(),
+            layer_sizes: layer_widths.to_vec(),
+        };
+        
+        let mut offset = 0;
+        for i in 0..layer_widths.len() - 1 {
+            let input_size = layer_widths[i];
+            let output_size = layer_widths[i + 1];
+            let weights_needed = (input_size + 1) * output_size;
+            
+            let layer = Layer::with_weights(
+                input_size,
+                &weights[offset..offset + weights_needed],
+                &activations[i]
+            );
+            mlp.layers.push(layer);
+            offset += weights_needed;
+        }
+        mlp
+    }
+
+    /// Set weights from a flat Vec<f64>
+    pub fn set_weights(&mut self, weights: &[f64]) {
+        let mut offset = 0;
+        for i in 0..self.layer_sizes.len() - 1 {
+            let input_size = self.layer_sizes[i];
+            let output_size = self.layer_sizes[i + 1];
+            let weights_needed = (input_size + 1) * output_size;
+            
+            self.layers[i].set_weights(&weights[offset..offset + weights_needed]);
+            offset += weights_needed;
+        }
+    }
+
+    /// Get the activations used by this MLP
+    pub fn get_activations(&self) -> Vec<Activations> {
+        self.layers.iter()
+            .map(|l| l.get_activation().clone())
+            .collect()
+    }
 }
