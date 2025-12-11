@@ -138,9 +138,11 @@ fn main() {
     println!("Using {} threads for parallel training\n", num_threads);
     
     let path = "python-tests/micrograd/regression-california-housing/dataset.csv";
+    // Note: ParallelTrainer averages gradients
+    // Use moderately higher lr than sequential (which sums gradients)
     let epochs = 10;
     let batch_size = 64;
-    let lr = 0.01;
+    let lr = 0.1;  // Tuned for parallel training with averaged gradients
     let limit = Some(2000);
     
     // Load data

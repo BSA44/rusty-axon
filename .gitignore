@@ -20,5 +20,4 @@ Cargo.lock
 # OS files
 .DS_Storep
 Thumbs.db
-mnist/
 mnist_cache/

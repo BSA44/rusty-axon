@@ -203,7 +203,9 @@ fn main() {
     let mut mlp = Mlp::new(&architecture, &activations);
     
     // Hyperparameters
-    let lr = 0.01;
+    // Note: ParallelTrainer averages gradients
+    // Use moderately higher lr than sequential (which sums gradients)
+    let lr = 0.1;  // Tuned for parallel training with averaged gradients
     let epochs = 50;
     let batch_size = 32;
     

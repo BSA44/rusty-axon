@@ -1,6 +1,7 @@
-//! MNIST Handwritten Digits Classifier Demo
+//! MNIST Handwritten Digits Classifier Demo (Parallel Version)
 //! 
 //! Architecture: 784 -> 64 -> 32 -> 10
+//! Uses ParallelTrainer for multi-threaded batch processing.
 //! 
 //! Before running, prepare the data:
 //!   cd python-tests && python prepare_mnist.py
@@ -11,8 +12,7 @@
 use rusty_axon::engine::value::Node;
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
-use rusty_axon::optim::sgd::Sgd;
-use rusty_axon::optim::optimizer::Optimizer;
+use rusty_axon::nn::parallel::ParallelTrainer;
 use rusty_axon::loss::cross_entropy::CrossEntropy;
 use rusty_axon::loss::loss::Loss;
 
@@ -53,8 +53,15 @@ fn load_mnist_csv(path: &str) -> Result<(Vec<Vec<f64>>, Vec<usize>), Box<dyn std
     Ok((images, labels))
 }
 
-/// Convert label to one-hot encoding
-fn one_hot(label: usize, num_classes: usize) -> Vec<Node> {
+/// Convert label to one-hot encoding (f64 version for parallel trainer)
+fn one_hot(label: usize, num_classes: usize) -> Vec<f64> {
+    (0..num_classes)
+        .map(|i| if i == label { 1.0 } else { 0.0 })
+        .collect()
+}
+
+/// Convert label to one-hot encoding (Node version for evaluation)
+fn one_hot_node(label: usize, num_classes: usize) -> Vec<Node> {
     (0..num_classes)
         .map(|i| Node::from(if i == label { 1.0 } else { 0.0 }))
         .collect()
@@ -169,11 +176,30 @@ fn evaluate_with_f1(mlp: &Mlp, images: &[Vec<f64>], labels: &[usize]) -> (f64, C
     (accuracy, confusion)
 }
 
+/// Compute average loss on a dataset
+fn compute_loss(mlp: &Mlp, images: &[Vec<f64>], labels: &[usize], loss_fn: &CrossEntropy) -> f64 {
+    let total_loss: f64 = images.iter()
+        .zip(labels.iter())
+        .map(|(image, &label)| {
+            let inputs: Vec<Node> = image.iter().map(|&x| Node::from(x)).collect();
+            let outputs = mlp.forward(&inputs);
+            let targets = one_hot_node(label, NUM_CLASSES);
+            loss_fn.forward(&outputs, &targets).get_value()
+        })
+        .sum();
+    total_loss / images.len() as f64
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!("     MNIST Classifier - rusty-axon Demo                     ");
-    println!("     Architecture: 784 -> 100 -> 50 -> 10                   ");
+    println!("     MNIST Classifier - rusty-axon Parallel Demo            ");
+    println!("     Architecture: 784 -> 64 -> 32 -> 10                    ");
     println!("============================================================");
+    println!();
+
+    // Show thread configuration
+    let num_threads = rusty_axon::get_num_threads();
+    println!("Using {} threads for parallel training", num_threads);
     println!();
 
     // Load data
@@ -192,29 +218,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create network: 784 -> 64 -> 32 -> 10
     println!();
     println!("[2/5] Creating neural network...");
-    let mlp = Mlp::new(
-        &[784, 64, 32, 10],
-        &[Activations::ReLU, Activations::ReLU, Activations::None]  // No activation before softmax
-    );
+    let architecture = vec![784, 64, 32, 10];
+    let activations = vec![Activations::ReLU, Activations::ReLU, Activations::None];
+    
+    let mut mlp = Mlp::new(&architecture, &activations);
     
     let num_params: usize = mlp.parameters().len();
     println!("       Parameters: {}", num_params);
     println!("       Architecture: 784 -> 64 -> 32 -> 10");
 
     // Training setup
-    let learning_rate = 0.01;
+    let learning_rate = 0.1;  // Higher lr for averaged gradients in parallel training
     let epochs = 10;
     let batch_size = 32;
     
-    let mut optimizer = Sgd::new(learning_rate, mlp.parameters());
+    // Create parallel trainer
+    let trainer = ParallelTrainer::new(learning_rate, architecture.clone(), activations.clone());
     let loss_fn = CrossEntropy::new(0.1);  // 10% label smoothing
     
     println!();
-    println!("[3/5] Training...");
+    println!("[3/5] Training (Parallel)...");
     println!("       Learning rate: {}", learning_rate);
     println!("       Epochs: {}", epochs);
     println!("       Batch size: {}", batch_size);
     println!("       Loss: CrossEntropy (label smoothing: 0.1)");
+    println!("       Mode: Parallel ({} threads)", num_threads);
     println!();
     println!("       {:>5} | {:>10} | {:>10} | {:>10} | {:>8}", 
              "Epoch", "Train Loss", "Train Acc", "Test Acc", "Time");
@@ -222,51 +250,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let total_start = Instant::now();
     
+    // Prepare training indices for shuffling
+    let n_train = train_images.len();
+    
     for epoch in 0..epochs {
         let epoch_start = Instant::now();
-        let mut epoch_loss = 0.0;
-        let mut epoch_correct = 0;
-        let num_batches = (train_images.len() + batch_size - 1) / batch_size;
         
-        for batch_idx in 0..num_batches {
-            let start = batch_idx * batch_size;
-            let end = (start + batch_size).min(train_images.len());
+        // Shuffle training data indices
+        use rand::seq::SliceRandom;
+        use rand::rng;
+        let mut indices: Vec<usize> = (0..n_train).collect();
+        indices.shuffle(&mut rng());
+        
+        let mut epoch_losses = Vec::new();
+        
+        // Process batches in parallel
+        for batch_start in (0..n_train).step_by(batch_size) {
+            let batch_end = (batch_start + batch_size).min(n_train);
+            let batch_indices = &indices[batch_start..batch_end];
             
-            // Accumulate gradients over batch
-            optimizer.zero_state();
-            let mut batch_loss = Node::from(0.0);
+            // Prepare batch data: (inputs, one-hot targets)
+            let batch: Vec<(Vec<f64>, Vec<f64>)> = batch_indices
+                .iter()
+                .map(|&idx| {
+                    let inputs = train_images[idx].clone();
+                    let targets = one_hot(train_labels[idx], NUM_CLASSES);
+                    (inputs, targets)
+                })
+                .collect();
             
-            for i in start..end {
-                let inputs: Vec<Node> = train_images[i].iter()
-                    .map(|&x| Node::from(x))
-                    .collect();
-                
-                let outputs = mlp.forward(&inputs);
-                let target = one_hot(train_labels[i], 10);
-                
-                // Track accuracy
-                if predict(&outputs) == train_labels[i] {
-                    epoch_correct += 1;
-                }
-                
-                // Accumulate loss
-                let sample_loss = loss_fn.forward(&outputs, &target);
-                batch_loss = batch_loss + sample_loss;
-            }
-            
-            // Average loss over batch
-            let actual_batch_size = (end - start) as f64;
-            batch_loss = batch_loss / actual_batch_size;
-            epoch_loss += batch_loss.get_value();
-            
-            // Backward and update
-            batch_loss.backward();
-            optimizer.step();
+            // Train batch in parallel - all samples processed simultaneously!
+            let batch_loss = trainer.train_batch(&mut mlp, &batch, &loss_fn);
+            epoch_losses.push(batch_loss);
         }
         
         // Calculate metrics
-        let avg_loss = epoch_loss / num_batches as f64;
-        let train_acc = epoch_correct as f64 / train_images.len() as f64 * 100.0;
+        let avg_loss = epoch_losses.iter().sum::<f64>() / epoch_losses.len() as f64;
+        let train_acc = evaluate(&mlp, &train_images, &train_labels);
         let test_acc = evaluate(&mlp, &test_images, &test_labels);
         let epoch_time = epoch_start.elapsed();
         
@@ -281,12 +301,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[4/5] Final Evaluation on Test Set");
     let (final_test_acc, confusion) = evaluate_with_f1(&mlp, &test_images, &test_labels);
     let final_train_acc = evaluate(&mlp, &train_images, &train_labels);
+    let final_loss = compute_loss(&mlp, &test_images, &test_labels, &loss_fn);
     let (precisions, recalls, f1_scores, macro_f1) = confusion.compute_f1_scores();
     
     println!();
     println!("       +-----------------------------------+");
     println!("       | Final Training Accuracy: {:6.2}% |", final_train_acc);
     println!("       | Final Test Accuracy:     {:6.2}% |", final_test_acc);
+    println!("       | Final Test Loss:         {:6.4}  |", final_loss);
     println!("       | Macro F1 Score:          {:6.4}  |", macro_f1);
     println!("       | Total Training Time:     {:5.2}s  |", total_time.as_secs_f64());
     println!("       +-----------------------------------+");
@@ -303,10 +325,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("       {}", "-".repeat(45));
     println!("       {:>5} | {:>9} | {:>9} | {:>9.4}", "Macro", "-", "-", macro_f1);
 
-    // Visualize network architecture
+    // Skip visualization - network is too large (784 inputs would create huge graph)
     println!();
-    println!("[5/5] Saving network architecture visualization...");
-    mlp.visualize_network("mnist_network", "png").ok();
+    println!("[5/5] Network visualization skipped (784 inputs too large for graphviz)");
     
     // Show some predictions
     println!();
@@ -325,7 +346,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!("Demo complete! Network visualization saved to mnist_network.png");
+    println!("Demo complete!");
+    println!();
+    println!("Tip: Try different thread counts:");
+    println!("  $env:RAYON_NUM_THREADS=1; cargo run --release --example mnist_classifier");
+    println!("  $env:RAYON_NUM_THREADS=4; cargo run --release --example mnist_classifier");
     
     Ok(())
 }

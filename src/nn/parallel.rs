@@ -91,7 +91,8 @@ impl ParallelTrainer {
         &self,
         mlp: &mut Mlp,
         batch: &[(Vec<f64>, Vec<f64>)],
-        loss_fn: &L,
+        loss_fn: &
+        L,
     ) -> f64 {
         if batch.is_empty() {
             return 0.0;
@@ -137,24 +138,25 @@ impl ParallelTrainer {
             })
             .collect();
 
-        // 4. Sum gradients across all examples (matches sequential SGD behavior)
+        // 4. Average gradients across all examples (standard practice)
         let num_examples = results.len() as f64;
         let num_params = results[0].0.len();
 
-        // SUM gradients (not average) to match sequential batch training behavior
-        let sum_gradients: Vec<f64> = (0..num_params)
+        // AVERAGE gradients - this is the standard in deep learning frameworks
+        // If you want to match sum behavior, multiply learning_rate by batch_size
+        let avg_gradients: Vec<f64> = (0..num_params)
             .map(|i| {
-                results.iter().map(|(g, _)| g[i]).sum::<f64>()
+                results.iter().map(|(g, _)| g[i]).sum::<f64>() / num_examples
             })
             .collect();
 
         let avg_loss: f64 = results.iter().map(|(_, l)| l).sum::<f64>() / num_examples;
 
-        // 5. Update master MLP weights using summed gradients
+        // 5. Update master MLP weights using averaged gradients
         let current_weights = mlp.get_weights();
         let new_weights: Vec<f64> = current_weights
             .iter()
-            .zip(sum_gradients.iter())
+            .zip(avg_gradients.iter())
             .map(|(w, g)| w - self.learning_rate * g)
             .collect();
         mlp.set_weights(&new_weights);
@@ -209,10 +211,10 @@ impl ParallelTrainer {
         let num_examples = results.len() as f64;
         let num_params = results[0].0.len();
 
-        // SUM gradients (not average) to match sequential batch training behavior
-        let sum_gradients: Vec<f64> = (0..num_params)
+        // AVERAGE gradients - standard practice
+        let avg_gradients: Vec<f64> = (0..num_params)
             .map(|i| {
-                results.iter().map(|(g, _)| g[i]).sum::<f64>()
+                results.iter().map(|(g, _)| g[i]).sum::<f64>() / num_examples
             })
             .collect();
 
@@ -221,7 +223,7 @@ impl ParallelTrainer {
         let current_weights = mlp.get_weights();
         let new_weights: Vec<f64> = current_weights
             .iter()
-            .zip(sum_gradients.iter())
+            .zip(avg_gradients.iter())
             .map(|(w, g)| w - self.learning_rate * g)
             .collect();
         mlp.set_weights(&new_weights);
