@@ -166,7 +166,6 @@ rusty-axon/
 2. `cargo run --example neural_network` - Build networks
 3. `cargo run --example xor_problem` - Train a model
 4. `cargo run --example graph_visualization` - Visualize gradients
-5. Read [AGENTS.md](AGENTS.md) for architecture details
 
 ## 🚧 Roadmap
 
@@ -179,6 +178,7 @@ rusty-axon/
 - ✅ Loss functions (MSE, RMSE, CrossEntropy)
 - ✅ XOR training example
 - ✅ Comprehensive testing
+- ✅ Added multithreading on branch `multithreading`
 
 ### Coming Soon
 - ⏳ Adam optimizer
