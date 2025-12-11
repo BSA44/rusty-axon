@@ -193,9 +193,7 @@ This is an **educational project**. Not suitable for production:
 
 - **Scalar only** - No tensor/matrix operations
 - **CPU only** - No GPU acceleration
-- **No batching** - One example at a time
 - **Memory intensive** - Stores full computation graph
-- **Not optimized** - Focus on clarity over performance
 
 
 ## 📄 License
