@@ -21,12 +21,16 @@ CLASSIFICATION_RUNS = [
     ("Python (Micrograd)", "python-tests/micrograd/classification-diabetes/training_metrics.csv"),
     ("Rust SGD", "python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_sgd.csv"),
     ("Rust MeProp", "python-tests/rusty-axon/classification-diabetes/rust_classification_metrics_meprop.csv"),
+    ("Rust SGD Rasp. Pi", "python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_sgd.csv"),
+    ("Rust MeProp Rasp. Pi", "python-tests/rusty-axon-rpi/classification-diabetes/rust_classification_metrics_meprop.csv"),
 ]
 
 REGRESSION_RUNS = [
     ("Python (Micrograd)", "python-tests/micrograd/regression-california-housing/training_metrics.csv"),
     ("Rust SGD", "python-tests/rusty-axon/regression-california-housing/rust_regression_metrics_sgd.csv"),
     ("Rust MeProp", "python-tests/rusty-axon/regression-california-housing/rust_regression_metrics_meprop.csv"),
+    ("Rust SGD Rasp. Pi", "python-tests/rusty-axon-rpi/regression-california-housing/rust_regression_metrics_sgd.csv"),
+    ("Rust MeProp Rasp. Pi", "python-tests/rusty-axon-rpi/regression-california-housing/rust_regression_metrics_meprop.csv"),
 ]
 
 
@@ -334,14 +338,6 @@ def main() -> None:
         print()
         regression_runs = compare_regression()
 
-    print("\n" + "=" * 80)
-    print("KEY TAKEAWAYS")
-    print("=" * 80)
-    print("• Rust should be 5-10x faster due to compiled, optimized code")
-    print("• Model quality (accuracy/loss) should be similar (±5%)")
-    print("• Minor differences expected due to random initialization")
-    print("• Rust provides type safety & memory safety guarantees")
-    print("=" * 80)
 
     if classification_runs or regression_runs:
         print("\n📝 Saving summary to markdown...")
