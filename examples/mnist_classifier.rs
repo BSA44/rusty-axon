@@ -230,7 +230,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Training setup
     let learning_rate = 0.1;  // Higher lr for averaged gradients in parallel training
     let epochs = 10;
-    let batch_size = 32;
+    let batch_size =32;
     
     // Create parallel trainer
     let trainer = ParallelTrainer::new(learning_rate, architecture.clone(), activations.clone());
@@ -327,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Skip visualization - network is too large (784 inputs would create huge graph)
     println!();
-    println!("[5/5] Network visualization skipped (784 inputs too large for graphviz)");
+    println!("[5/5] Sample Predictions:");
     
     // Show some predictions
     println!();
@@ -347,10 +347,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Demo complete!");
-    println!();
-    println!("Tip: Try different thread counts:");
-    println!("  $env:RAYON_NUM_THREADS=1; cargo run --release --example mnist_classifier");
-    println!("  $env:RAYON_NUM_THREADS=4; cargo run --release --example mnist_classifier");
-    
     Ok(())
 }
