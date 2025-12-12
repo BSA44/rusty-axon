@@ -178,10 +178,10 @@ def main():
     print(f"[+] Full dataset: {X.shape[0]} images, {X.shape[1]} pixels each")
     
     # Prepare training set: 800 images (80 per class)
-    X_train, y_train = prepare_balanced_subset(X, y, samples_per_class=80, seed=42)
+    X_train, y_train = prepare_balanced_subset(X, y, samples_per_class=800, seed=42)
     
     # Prepare test set: 200 images (20 per class) with different seed
-    X_test, y_test = prepare_balanced_subset(X, y, samples_per_class=20, seed=123)
+    X_test, y_test = prepare_balanced_subset(X, y, samples_per_class=200, seed=123)
     
     # Save to CSV
     save_to_csv(X_train, y_train, os.path.join(output_dir, "mnist_train.csv"))
