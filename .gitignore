@@ -22,3 +22,5 @@ Cargo.lock
 Thumbs.db
 mnist/
 mnist_cache/
+
+.claude/
