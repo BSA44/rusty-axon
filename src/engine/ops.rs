@@ -1,7 +1,7 @@
 //! Definitions of differentiable operations that can be applied to values.
 
-use std::fmt::Display;
 use crate::engine::value::Node;
+use std::fmt::Display;
 
 /// Every differentiable operation should describe how to perform the forward
 /// computation and how to propagate gradients backward.
@@ -19,20 +19,23 @@ pub enum Operation {
     None,
 }
 
-
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Operation({})", match self {
-            Operation::Add { .. } => "ADD",
-            Operation::Sub { .. } => "SUB",
-            Operation::Mul { .. } => "MUL",
-            Operation::Div { .. } => "DIV",
-            Operation::Pow { .. } => "POW",
-            Operation::Exp { .. } => "EXP",
-            Operation::Neg { .. } => "NEG",
-            Operation::Log { .. } => "LOG",
-            Operation::ReLU { .. } => "RELU",
-            Operation::None => "NONE",
-        })
+        write!(
+            f,
+            "Operation({})",
+            match self {
+                Operation::Add { .. } => "ADD",
+                Operation::Sub { .. } => "SUB",
+                Operation::Mul { .. } => "MUL",
+                Operation::Div { .. } => "DIV",
+                Operation::Pow { .. } => "POW",
+                Operation::Exp { .. } => "EXP",
+                Operation::Neg { .. } => "NEG",
+                Operation::Log { .. } => "LOG",
+                Operation::ReLU { .. } => "RELU",
+                Operation::None => "NONE",
+            }
+        )
     }
 }

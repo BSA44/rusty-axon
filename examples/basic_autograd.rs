@@ -1,8 +1,7 @@
 /// Example: Basic Autograd Operations
-/// 
+///
 /// Demonstrates the core automatic differentiation capabilities.
 /// Run with: cargo run --example basic_autograd
-
 use rusty_axon::engine::Node;
 
 fn main() {
@@ -13,15 +12,15 @@ fn main() {
     let a = Node::from(2.0);
     let b = Node::from(-3.0);
     let c = Node::from(10.0);
-    
+
     let d = a.clone() * b.clone();
     let e = d + c.clone();
     let mut f = e.pow(2.0);
-    
+
     println!("   Forward: f = {}", f.get_value());
-    
+
     f.backward();
-    
+
     println!("   Gradients:");
     println!("     df/da = {}", a.get_gradient());
     println!("     df/db = {}", b.get_gradient());
@@ -40,12 +39,20 @@ fn main() {
     let x = Node::from(1.0);
     let mut exp_x = x.clone().exp();
     exp_x.backward();
-    println!("   exp(1) = {:.4}, d/dx exp(x) = {:.4}", exp_x.get_value(), x.get_gradient());
+    println!(
+        "   exp(1) = {:.4}, d/dx exp(x) = {:.4}",
+        exp_x.get_value(),
+        x.get_gradient()
+    );
 
     let x2 = Node::from(std::f64::consts::E);
     let mut ln_x = x2.clone().log(std::f64::consts::E);
     ln_x.backward();
-    println!("   ln(e) = {:.4}, d/dx ln(x) = {:.4}", ln_x.get_value(), x2.get_gradient());
+    println!(
+        "   ln(e) = {:.4}, d/dx ln(x) = {:.4}",
+        ln_x.get_value(),
+        x2.get_gradient()
+    );
 
     // Example 4: Sigmoid activation
     println!("\n4. Sigmoid: σ(x) = 1 / (1 + e^(-x))");
@@ -66,4 +73,3 @@ fn main() {
 
     println!("\n✨ All examples completed!");
 }
-

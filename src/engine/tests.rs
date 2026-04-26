@@ -257,9 +257,9 @@ mod tests {
         f.backward();
 
         assert_close(f.get_value(), 2.0, "forward value");
-        assert_close(x.get_gradient(), 1.0/3.0, "df/dx");
+        assert_close(x.get_gradient(), 1.0 / 3.0, "df/dx");
         // df/dy = -x/(y+1)² = -6/9 = -2/3
-        assert_close(y.get_gradient(), -2.0/3.0, "df/dy");
+        assert_close(y.get_gradient(), -2.0 / 3.0, "df/dy");
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
         // tanh(0.5) ≈ 0.46211715726
         let expected_val = 0.5_f64.tanh();
         assert_close(f.get_value(), expected_val, "forward value");
-        
+
         // d/dx tanh(x) = 1 - tanh²(x)
         let expected_grad = 1.0 - expected_val * expected_val;
         assert_close(x.get_gradient(), expected_grad, "df/dx");
@@ -301,7 +301,7 @@ mod tests {
     fn test_sigmoid_approximation() {
         // sigmoid(x) ≈ 1 / (1 + e^(-x))
         let x = Node::from(0);
-        
+
         let sigmoid = 1.0 / (1.0 + (-x.clone()).exp());
         let mut f = sigmoid;
         f.backward();
@@ -376,14 +376,14 @@ mod tests {
         // f(x) = ((x + 1) * 2)² - 3
         // Test a longer chain of operations
         let x = Node::from(2.0);
-        let step1 = x.clone() + 1.0;  // 3
-        let step2 = step1 * 2.0;       // 6
-        let step3 = step2.pow(2.0);    // 36
-        let mut f = step3 - 3.0;       // 33
+        let step1 = x.clone() + 1.0; // 3
+        let step2 = step1 * 2.0; // 6
+        let step3 = step2.pow(2.0); // 36
+        let mut f = step3 - 3.0; // 33
         f.backward();
 
         assert_close(f.get_value(), 33.0, "forward value");
-        
+
         // df/dx using chain rule:
         // d/dx[((x+1)*2)² - 3] = 2*((x+1)*2) * 2 * 1 = 4(x+1)*2 = 8(x+1) = 24
         assert_close(x.get_gradient(), 24.0, "df/dx");
@@ -422,19 +422,19 @@ mod tests {
         c.backward();
 
         let dot = c.to_dot();
-        
+
         // Check basic DOT structure
         assert!(dot.contains("digraph G"));
         assert!(dot.contains("rankdir=LR"));
-        
+
         // Check that nodes are present
         assert!(dot.contains("val=5.0000"));
         assert!(dot.contains("val=2.0000"));
         assert!(dot.contains("val=3.0000"));
-        
+
         // Check that gradients are present
         assert!(dot.contains("grad=1.0000"));
-        
+
         // Check that operation is present
         assert!(dot.contains("label=\"+\""));
     }
@@ -449,12 +449,11 @@ mod tests {
         result.backward();
 
         let dot = result.to_dot();
-        
+
         // Should contain multiple operations
-        assert!(dot.contains("×"));  // multiplication
-        assert!(dot.contains("+"));  // addition
-        assert!(dot.contains("÷"));  // division
-        assert!(dot.contains("^"));  // power
+        assert!(dot.contains("×")); // multiplication
+        assert!(dot.contains("+")); // addition
+        assert!(dot.contains("÷")); // division
+        assert!(dot.contains("^")); // power
     }
 }
-

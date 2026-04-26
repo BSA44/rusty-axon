@@ -1,21 +1,17 @@
 /// Example: Neural Network Basics
-/// 
+///
 /// Demonstrates creating and using neural networks.
 /// Run with: cargo run --example neural_network
-
 use rusty_axon::engine::Node;
-use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::nn::activations::Activations;
+use rusty_axon::nn::mlp::Mlp;
 
 fn main() {
     println!("=== Neural Network Examples ===\n");
 
     // Example 1: Simple network
     println!("1. Creating a 2-4-1 network");
-    let mlp = Mlp::new(
-        &[2, 4, 1],
-        &[Activations::Tanh, Activations::Sigmoid]
-    );
+    let mlp = Mlp::new(&[2, 4, 1], &[Activations::Tanh, Activations::Sigmoid]);
     println!("   Architecture: {:?}", mlp.get_architecture());
     println!("   Parameters: {}", mlp.parameters().len());
 
@@ -38,8 +34,8 @@ fn main() {
             Activations::Tanh,
             Activations::Tanh,
             Activations::Tanh,
-            Activations::Sigmoid
-        ]
+            Activations::Sigmoid,
+        ],
     );
     println!("   Architecture: {:?}", deep_mlp.get_architecture());
     println!("   Parameters: {}", deep_mlp.parameters().len());
@@ -60,8 +56,11 @@ fn main() {
             count_nonzero += 1;
         }
     }
-    println!("   {} of {} parameters have non-zero gradients", count_nonzero, params.len());
+    println!(
+        "   {} of {} parameters have non-zero gradients",
+        count_nonzero,
+        params.len()
+    );
 
     println!("\n✨ Examples completed!");
 }
-

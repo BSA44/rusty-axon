@@ -1,7 +1,7 @@
 //! Single neuron abstraction composed of weighted inputs and an activation.
-use rand::Rng;
 use crate::engine::value::Node;
 use crate::nn::activations::Activations;
+use rand::Rng;
 /// Basic neuron that consumes a vector of inputs and produces a scalar output.
 pub struct Neuron {
     weights: Vec<Node>,
@@ -11,11 +11,11 @@ pub struct Neuron {
 
 impl Neuron {
     /// Create a new neuron with the requested number of inputs.
-    pub fn new( num_inputs: usize, activation: Activations) -> Self{
+    pub fn new(num_inputs: usize, activation: Activations) -> Self {
         let mut rng = rand::rng();
         let mut neuron = Self {
             weights: Vec::new(),
-            bias:Node::new(rng.random_range(-1.0..1.0)),
+            bias: Node::new(rng.random_range(-1.0..1.0)),
             activation: activation,
         };
         for _ in 0..num_inputs {
@@ -38,9 +38,10 @@ impl Neuron {
     }
 
     pub fn parameters(&self) -> Vec<Node> {
-        self.weights.iter()
-        .cloned()
-        .chain(std::iter::once(self.bias.clone()))
-        .collect()
+        self.weights
+            .iter()
+            .cloned()
+            .chain(std::iter::once(self.bias.clone()))
+            .collect()
     }
 }

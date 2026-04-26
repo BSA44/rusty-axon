@@ -28,12 +28,12 @@ pub struct NetworkVisualizationConfig {
     pub neuron_size: f64,
     pub layer_spacing: f64,
     pub neuron_spacing: f64,
-    
+
     // Colors for different layer types
     pub input_colors: LayerColors,
     pub hidden_colors: LayerColors,
     pub output_colors: LayerColors,
-    
+
     // Edge appearance
     pub edge_color: String,
     pub edge_width: f64,
@@ -47,12 +47,12 @@ impl Default for NetworkVisualizationConfig {
             neuron_size: 0.6,
             layer_spacing: 3.0,
             neuron_spacing: 1.0,
-            
+
             // Default color scheme
             input_colors: LayerColors::new("aliceblue", "lightblue"),
             hidden_colors: LayerColors::new("lightyellow", "gold"),
             output_colors: LayerColors::new("honeydew", "lightgreen"),
-            
+
             edge_color: "gray70".to_string(),
             edge_width: 0.5,
         }
@@ -76,7 +76,7 @@ impl NetworkVisualizationConfig {
             ..Default::default()
         }
     }
-    
+
     /// Set edge appearance
     pub fn with_edges(mut self, color: &str, width: f64) -> Self {
         self.edge_color = color.to_string();
@@ -98,38 +98,44 @@ pub fn generate_network_dot(
     dot.push_str("    nodesep=0.8;\n");
     dot.push_str("    ranksep=2.5;\n");
     dot.push_str("    node [shape=circle, fixedsize=true, width=0.8, style=filled];\n");
-    dot.push_str(&format!("    edge [color={}, penwidth={}];\n\n", 
-        config.edge_color, config.edge_width));
+    dot.push_str(&format!(
+        "    edge [color={}, penwidth={}];\n\n",
+        config.edge_color, config.edge_width
+    ));
 
     // Create subgraphs for each layer
     for (layer_idx, &layer_size) in layer_sizes.iter().enumerate() {
         let layer_name = &layer_names[layer_idx];
-        
+
         // Build label with activation function if available
-        let label = if layer_idx < activation_names.len() && !activation_names[layer_idx].is_empty() {
+        let label = if layer_idx < activation_names.len() && !activation_names[layer_idx].is_empty()
+        {
             format!("{}\\n({})", layer_name, activation_names[layer_idx])
         } else {
             layer_name.clone()
         };
-        
+
         dot.push_str(&format!("    subgraph cluster_{} {{\n", layer_idx));
         dot.push_str(&format!("        label=\"{}\";\n", label));
         dot.push_str("        style=rounded;\n");
         dot.push_str("        fontsize=14;\n");
         dot.push_str("        fontname=\"Arial Bold\";\n");
-        
+
         // Determine colors based on layer type using config
         let layer_colors = if layer_idx == 0 {
-            &config.input_colors  // Input layer
+            &config.input_colors // Input layer
         } else if layer_idx == layer_sizes.len() - 1 {
-            &config.output_colors  // Output layer
+            &config.output_colors // Output layer
         } else {
-            &config.hidden_colors  // Hidden layers
+            &config.hidden_colors // Hidden layers
         };
-        
+
         dot.push_str(&format!("        bgcolor={};\n", layer_colors.background));
-        dot.push_str(&format!("        node [fillcolor={}];\n", layer_colors.neuron));
-        
+        dot.push_str(&format!(
+            "        node [fillcolor={}];\n",
+            layer_colors.neuron
+        ));
+
         // Create nodes for this layer
         dot.push_str("        { rank=same; ");
         for neuron_idx in 0..layer_size {
@@ -144,7 +150,7 @@ pub fn generate_network_dot(
     for layer_idx in 0..layer_sizes.len() - 1 {
         let current_size = layer_sizes[layer_idx];
         let next_size = layer_sizes[layer_idx + 1];
-        
+
         for current_neuron in 0..current_size {
             for next_neuron in 0..next_size {
                 let from_id = format!("L{}N{}", layer_idx, current_neuron);
@@ -177,10 +183,7 @@ pub fn save_network_graph(
 
 /// Check if Graphviz is installed
 pub fn check_graphviz() -> bool {
-    std::process::Command::new("dot")
-        .arg("-V")
-        .output()
-        .is_ok()
+    std::process::Command::new("dot").arg("-V").output().is_ok()
 }
 
 /// Render the network graph to an image file
@@ -194,10 +197,16 @@ pub fn render_network_to(
 ) -> std::io::Result<()> {
     let dot_file = format!("{}.dot", output_name);
     let output_file = format!("{}.{}", output_name, format);
-    
+
     // Save DOT file first
-    save_network_graph(&dot_file, layer_sizes, layer_names, activation_names, config)?;
-    
+    save_network_graph(
+        &dot_file,
+        layer_sizes,
+        layer_names,
+        activation_names,
+        config,
+    )?;
+
     // Check if graphviz is available
     if !check_graphviz() {
         println!("[-] Graphviz not found!");
@@ -208,7 +217,7 @@ pub fn render_network_to(
         println!("\n  You can still view the .dot file at: http://www.webgraphviz.com/");
         return Ok(());
     }
-    
+
     // Validate format
     let valid_formats = ["png", "svg", "pdf", "jpg", "jpeg"];
     if !valid_formats.contains(&format) {
@@ -216,18 +225,18 @@ pub fn render_network_to(
         println!("  Supported formats: png, svg, pdf, jpg");
         return Ok(());
     }
-    
+
     // Render with dot command
     let format_arg = format!("-T{}", format);
     let result = std::process::Command::new("dot")
         .args(&[&format_arg, &dot_file, "-o", &output_file])
         .output();
-    
+
     match result {
         Ok(output) => {
             if output.status.success() {
                 println!("[+] Network graph rendered to {}", output_file);
-                
+
                 // Show file size
                 if let Ok(metadata) = std::fs::metadata(&output_file) {
                     let size_kb = metadata.len() / 1024;
@@ -245,4 +254,3 @@ pub fn render_network_to(
         }
     }
 }
-

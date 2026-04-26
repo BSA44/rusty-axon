@@ -1,0 +1,7 @@
+# Pin the toolchain so CI builds and Phase 8 benchmark tables are
+# reproducible across machines and across rebuilds. Bump this in lockstep
+# with `Cargo.toml` changes that require a newer compiler.
+[toolchain]
+channel = "1.87.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

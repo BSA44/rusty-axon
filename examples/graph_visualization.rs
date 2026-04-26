@@ -1,8 +1,7 @@
 /// Example: Graph Visualization
-/// 
+///
 /// This example demonstrates how to visualize computation graphs
 /// in different formats (PNG, SVG, PDF).
-
 use rusty_axon::engine::Node;
 
 fn main() {
@@ -61,4 +60,3 @@ fn main() {
 
     println!("\n Done!");
 }
-

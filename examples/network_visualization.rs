@@ -4,8 +4,8 @@
 //! with a layer-oriented view (not the detailed computation graph).
 
 use rusty_axon::engine::Node;
-use rusty_axon::Mlp;
 use rusty_axon::Activations;
+use rusty_axon::Mlp;
 
 fn main() {
     println!("=== Neural Network Architecture Visualization Examples ===\n");
@@ -13,10 +13,16 @@ fn main() {
     // Example 1: Simple network (XOR-like architecture)
     println!("Example 1: Simple XOR Network (2-4-1)");
     let xor_network = Mlp::new(
-        &[10, 20, 10, 10,4],
-        &[Activations::Tanh,Activations::Tanh,Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
+        &[10, 20, 10, 10, 4],
+        &[
+            Activations::Tanh,
+            Activations::Tanh,
+            Activations::Tanh,
+            Activations::Tanh,
+            Activations::Sigmoid,
+        ],
     );
-    
+
     println!("  Architecture: {:?}", xor_network.get_architecture());
     println!("  Total parameters: {}", xor_network.parameters().len());
     println!("  Visualizing...");
@@ -29,7 +35,7 @@ fn main() {
         &[3, 8, 8, 4, 1],
         &[Activations::Tanh, Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
     );
-    
+
     println!("  Architecture: {:?}", deep_network.get_architecture());
     println!("  Total parameters: {}", deep_network.parameters().len());
     println!("  Visualizing...");
@@ -42,7 +48,7 @@ fn main() {
         &[4, 16, 8, 2],
         &[Activations::Swish, Activations::Tanh, Activations::Sigmoid]
     );
-    
+
     println!("  Architecture: {:?}", wide_network.get_architecture());
     println!("  Total parameters: {}", wide_network.parameters().len());
     println!("  Visualizing...");
@@ -55,7 +61,7 @@ fn main() {
         &[5, 8, 4, 1],
         &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]
     );
-    
+
     println!("  Architecture: {:?}", classifier.get_architecture());
     println!("  Total parameters: {}", classifier.parameters().len());
     println!("  Visualizing...");
@@ -65,22 +71,22 @@ fn main() {
     // Example 5: Forward pass visualization
     println!("Example 5: Forward Pass + Computation Graph");
     let network = Mlp::new(&[2, 3, 1], &[Activations::Tanh, Activations::Sigmoid]);
-    
+
     // First, visualize the architecture
     println!("  Visualizing network architecture...");
     network.render_network_png("architecture").unwrap();
-    
+
     // Then do a forward pass and visualize the computation graph
     let inputs = vec![Node::from(1.5), Node::from(-0.5)];
     let outputs = network.forward(&inputs);
     let mut output = outputs[0].clone();
-    
+
     println!("  Forward pass: {} -> {}", inputs[0].get_value(), output.get_value());
-    
+
     // Backward pass
     output.backward();
     println!("  Backward pass completed");
-    
+
     // Visualize the detailed computation graph (micrograd-style)
     println!("  Visualizing computation graph...");
     output.render_png("detailed_computation_graph").unwrap();
@@ -99,4 +105,3 @@ fn main() {
     println!("      Computation graphs show individual scalar operations.");
      */
 }
-

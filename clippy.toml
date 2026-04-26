@@ -1,0 +1,12 @@
+# Keep clippy tight but not obnoxious for an educational/edge framework.
+# `too-many-arguments` — most of our surface-level APIs are wide
+# on purpose (Mlp / Linear / axn writer), so bump the default from 7.
+too-many-arguments-threshold = 10
+
+# Our scalar Value type wraps small types; some inner functions legitimately
+# exceed the default cognitive complexity. Raise slightly — revisit in Phase 1
+# when the MatMul op lands and we can split build_topo_recursive.
+cognitive-complexity-threshold = 30
+
+# MSRV mirrors rust-toolchain.toml; allows lints that hint at newer syntax.
+msrv = "1.87.0"

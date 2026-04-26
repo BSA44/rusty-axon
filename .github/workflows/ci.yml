@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Note on lint strictness (Phase 0):
+# The v0.2 codebase carries a number of cosmetic clippy warnings that will be
+# swept up naturally as those modules are rewritten in Phases 1–8. CI runs
+# clippy as an advisory check for now; a later phase will flip back to
+# `-D warnings` once the rewrite passes are in.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # fmt: formatting must match on every push.
+  # ---------------------------------------------------------------------------
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  # ---------------------------------------------------------------------------
+  # clippy: advisory during Phase 0 (legacy v0.2 warnings present).
+  # ---------------------------------------------------------------------------
+  clippy:
+    name: clippy (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "train"
+          - "train,matrixmultiply"
+          - "train,naive-matmul"
+          - "inference"
+          - "inference,quant-i8"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: cargo clippy (advisory)
+        run: cargo clippy --no-default-features --features "${{ matrix.features }}" --all-targets
+
+  # ---------------------------------------------------------------------------
+  # test matrix: feature combos × (ubuntu, windows).
+  # ---------------------------------------------------------------------------
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        features:
+          - "train"
+          - "train,matrixmultiply"
+          - "inference"
+          - "inference,quant-i8"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: cargo check
+        run: cargo check --no-default-features --features "${{ matrix.features }}" --all-targets
+      - name: cargo test
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --all-targets
+
+  # ---------------------------------------------------------------------------
+  # Release-edge profile smoke build: catches `panic = "abort"` / LTO / strip
+  # regressions early. Host-native; aarch64 cross-compile lands in Phase 9.
+  # ---------------------------------------------------------------------------
+  release-edge:
+    name: release-edge build (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "train,matrixmultiply"
+          - "inference"
+          - "inference,quant-i8"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: cargo build --profile release-edge
+        run: cargo build --profile release-edge --no-default-features --features "${{ matrix.features }}"

@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target
-Cargo.lock
+# Cargo.lock is checked in: reproducibility is a Phase 0 / paper requirement
+# (benchmark and binary-size tables must be stable across rebuilds).
 
 # Generated visualization files
 *.dot

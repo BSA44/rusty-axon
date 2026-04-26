@@ -1,0 +1,6 @@
+# Cargo configuration for rusty-axon.
+#
+# Phase 0: intentionally empty placeholder. Phase 9 populates the
+# `[target.aarch64-unknown-linux-gnu]` block with `linker` and
+# `rustflags = ["-C", "target-cpu=cortex-a53", "-C", "target-feature=+neon"]`
+# for cross-compiling to Raspberry Pi Zero 2 W.

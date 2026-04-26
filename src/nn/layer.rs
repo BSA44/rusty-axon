@@ -1,8 +1,8 @@
 //! Compositions of neurons into layers.
 
 use crate::engine::value::Node;
-use crate::nn::neuron::Neuron;
 use crate::nn::activations::Activations;
+use crate::nn::neuron::Neuron;
 /// A fully connected layer consisting of multiple neurons.
 pub struct Layer {
     neurons: Vec<Neuron>,
@@ -33,7 +33,8 @@ impl Layer {
     }
 
     pub fn parameters(&self) -> Vec<Node> {
-        self.neurons.iter()
+        self.neurons
+            .iter()
             .flat_map(|neuron| neuron.parameters())
             .collect()
     }

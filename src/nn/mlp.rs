@@ -3,7 +3,7 @@
 use crate::engine::value::Node;
 use crate::nn::activations::Activations;
 use crate::nn::layer::Layer;
-use crate::nn::visualization::{NetworkVisualizationConfig, render_network_to};
+use crate::nn::visualization::{render_network_to, NetworkVisualizationConfig};
 
 /// Simple feed-forward neural network composed of sequential layers.
 pub struct Mlp {
@@ -23,7 +23,6 @@ impl Mlp {
             mlp.layers.push(layer);
         }
         mlp
-
     }
 
     /// Evaluate the network on a single input example.
@@ -36,7 +35,8 @@ impl Mlp {
     }
 
     pub fn parameters(&self) -> Vec<Node> {
-        self.layers.iter()
+        self.layers
+            .iter()
             .flat_map(|layer| layer.parameters())
             .collect()
     }
@@ -44,40 +44,40 @@ impl Mlp {
     /// Generate layer names for visualization
     fn generate_layer_names(&self) -> Vec<String> {
         let mut names = Vec::new();
-        
+
         // Input layer
         names.push("Input Layer".to_string());
-        
+
         // Hidden layers
         for i in 1..self.layer_sizes.len() - 1 {
             names.push(format!("Hidden Layer {}", i));
         }
-        
+
         // Output layer
         if self.layer_sizes.len() > 1 {
             names.push("Output Layer".to_string());
         }
-        
+
         names
     }
 
     /// Generate activation function names for visualization
     fn generate_activation_names(&self) -> Vec<String> {
         let mut names = Vec::new();
-        
+
         // Input layer has no activation
         names.push(String::new());
-        
+
         // Each subsequent layer has an activation from the corresponding layer
         for layer in &self.layers {
             names.push(format!("{}", layer.get_activation()));
         }
-        
+
         names
     }
 
     /// Visualize the network architecture as a layer-oriented graph
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// let mlp = Mlp::new(&[2, 4, 4, 1], &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]);
@@ -89,17 +89,17 @@ impl Mlp {
     }
 
     /// Visualize the network architecture with custom configuration
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// use rusty_axon::nn::visualization::NetworkVisualizationConfig;
-    /// 
+    ///
     /// let config = NetworkVisualizationConfig::with_colors(
     ///     "lavender", "mediumpurple",  // Input layer
     ///     "mistyrose", "lightcoral",   // Hidden layers
     ///     "lightcyan", "lightskyblue", // Output layer
     /// );
-    /// 
+    ///
     /// mlp.visualize_network_with_config("my_network", "png", &config).unwrap();
     /// ```
     pub fn visualize_network_with_config(
@@ -110,7 +110,14 @@ impl Mlp {
     ) -> std::io::Result<()> {
         let layer_names = self.generate_layer_names();
         let activation_names = self.generate_activation_names();
-        render_network_to(output_name, format, &self.layer_sizes, &layer_names, &activation_names, config)
+        render_network_to(
+            output_name,
+            format,
+            &self.layer_sizes,
+            &layer_names,
+            &activation_names,
+            config,
+        )
     }
 
     /// Render network architecture to PNG (convenience method)
