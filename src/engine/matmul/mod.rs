@@ -9,9 +9,11 @@
 //! backward — into [`MatMulTape`].  Each output `Node` produced by a matmul
 //! carries `(Rc<MatMulTape>, output_index)` and nothing else.
 //!
-//! The kernel itself is the naive scalar fallback for Phase 1.  Phase 4 will
-//! swap the three call sites in [`MatMulTape::run_backward`] /
-//! [`MatMulTape::forward_into`] for `matrixmultiply::sgemm`.
+//! The three GEMM call sites — forward `y = W @ x + b`, backward `dW = d_out
+//! @ xᵀ`, backward `dx = Wᵀ @ d_out` — go through the [`kernel::sgemm_rm`]
+//! helper.  Phase 4 swaps that helper between [`kernel_naive`] and
+//! [`kernel_mm`] (matrixmultiply, auto-NEON on aarch64) at compile time based
+//! on the `matrixmultiply` / `naive-matmul` feature flags.
 //!
 //! ## Backward dispatch
 //!
@@ -36,6 +38,13 @@ use std::rc::Rc;
 use crate::engine::ops::Operation;
 use crate::engine::value::Node;
 
+mod kernel;
+pub(crate) mod kernel_naive;
+#[cfg(feature = "matrixmultiply")]
+pub(crate) mod kernel_mm;
+
+pub(crate) use kernel::sgemm_rm;
+
 /// Which buffer in a [`MatMulTape`] a [`ParamView`] points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamKind {
@@ -52,8 +61,8 @@ pub enum ParamKind {
 /// `Node::get_value`, `set_value`, `get_gradient`, and `add_gradient` route
 /// straight into `tape.weights[index]` / `tape.bias[index]` (or the matching
 /// gradient buffer) via `RefCell::borrow{,_mut}`.  The fused matmul kernel
-/// `matrixmultiply::sgemm` (Phase 4) requires a contiguous `&[f32]`, which is
-/// why parameters live in the tape's flat buffer rather than as one
+/// `matrixmultiply::sgemm` requires a contiguous `&[f32]`, which is why
+/// parameters live in the tape's flat buffer rather than as one
 /// `Rc<RefCell<f32>>` per scalar.
 #[derive(Debug, Clone)]
 pub struct ParamView {
@@ -229,21 +238,29 @@ impl MatMulTape {
             None
         };
 
-        // Forward kernel: y = W @ x + b.  Naive scalar fallback for Phase 1;
-        // Phase 4 will swap to `matrixmultiply::sgemm`.
+        // Forward kernel: y = W @ x + b.  Pre-load y with bias, then sgemm
+        // with beta = 1 to accumulate.  Sized as [m=out_dim, k=in_dim, n=1]
+        // — the column vector x has ldb = 1 because there is exactly one
+        // column.
         let mut y = vec![0.0_f32; self.out_dim];
         {
             let weights = self.weights.borrow();
             let bias = self.bias.borrow();
             let input = self.input.borrow();
-            for i in 0..self.out_dim {
-                let mut acc = bias[i];
-                let row_offset = i * self.in_dim;
-                for j in 0..self.in_dim {
-                    acc += weights[row_offset + j] * input[j];
-                }
-                y[i] = acc;
-            }
+            y.copy_from_slice(&bias);
+            sgemm_rm(
+                self.out_dim,
+                self.in_dim,
+                1,
+                1.0,
+                &weights,
+                self.in_dim,
+                &input,
+                1,
+                1.0,
+                &mut y,
+                1,
+            );
         }
 
         // Reset per-iteration state.  `d_weights` / `d_bias` accumulate across
@@ -279,8 +296,7 @@ impl MatMulTape {
     ///
     /// Accumulates `dW += d_out ⊗ input` and `db += d_out`, then (if the
     /// inputs were not leaves) propagates `dx = Wᵀ d_out` into the upstream
-    /// `Node`s via `add_gradient`.  All three operations are naive scalar
-    /// fallbacks; Phase 4 substitutes `matrixmultiply::sgemm`.
+    /// `Node`s via `add_gradient`.
     pub fn run_backward(self: &Rc<Self>) {
         debug_assert!(
             !self.backward_done.get(),
@@ -291,19 +307,24 @@ impl MatMulTape {
         let input = self.input.borrow();
         let d_out = self.d_out.borrow();
 
-        // dW[i, j] += d_out[i] * input[j]   (rank-1 update)
+        // dW += d_out ⊗ x   (rank-1 outer product)
+        // Sized as [m=out_dim, k=1, n=in_dim].  d_out is [out, 1] so lda=1;
+        // x is [1, in] so ldb=in.  beta=1 to accumulate across mini-batches.
         {
             let mut d_weights = self.d_weights.borrow_mut();
-            for i in 0..self.out_dim {
-                let row_offset = i * self.in_dim;
-                let g = d_out[i];
-                if g == 0.0 {
-                    continue;
-                }
-                for j in 0..self.in_dim {
-                    d_weights[row_offset + j] += g * input[j];
-                }
-            }
+            sgemm_rm(
+                self.out_dim,
+                1,
+                self.in_dim,
+                1.0,
+                &d_out,
+                1,
+                &input,
+                self.in_dim,
+                1.0,
+                &mut d_weights,
+                self.in_dim,
+            );
         }
 
         // db[i] += d_out[i]
@@ -314,17 +335,26 @@ impl MatMulTape {
             }
         }
 
-        // dx[j] = sum_i W[i, j] * d_out[i]; propagate to upstream Nodes.
+        // dx = d_outᵀ @ W; m=1, k=out_dim, n=in_dim.  d_out is treated as a
+        // [1, out] row, W is [out, in], result is [1, in].  beta=0 because
+        // d_input is scratch — we overwrite, then forward each component into
+        // the matching upstream Node.
         let upstream_borrow = self.upstream.borrow();
         if let Some(upstream) = upstream_borrow.as_ref() {
             let mut d_input = self.d_input.borrow_mut();
-            for j in 0..self.in_dim {
-                let mut acc = 0.0_f32;
-                for i in 0..self.out_dim {
-                    acc += weights[i * self.in_dim + j] * d_out[i];
-                }
-                d_input[j] = acc;
-            }
+            sgemm_rm(
+                1,
+                self.out_dim,
+                self.in_dim,
+                1.0,
+                &d_out,
+                self.out_dim,
+                &weights,
+                self.in_dim,
+                0.0,
+                &mut d_input,
+                self.in_dim,
+            );
             for (j, node) in upstream.iter().enumerate() {
                 node.add_gradient(d_input[j]);
             }
@@ -403,5 +433,140 @@ impl Drop for MatMulTape {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod kernel_tests {
+    //! Phase 4 acceptance: `kernel_mm` and `kernel_naive` agree to within
+    //! `1e-5` on a randomly populated 64x64 GEMM, and on the three shapes
+    //! `MatMulTape` actually issues (mat-vec, outer product, row-times-mat).
+    //!
+    //! Only runs when `matrixmultiply` is enabled (it has to be for the
+    //! `kernel_mm` module to compile).
+
+    #[cfg(feature = "matrixmultiply")]
+    use super::kernel_mm::sgemm_rm as sgemm_mm;
+    use super::kernel_naive::sgemm_rm as sgemm_naive;
+
+    fn lcg(seed: &mut u32) -> f32 {
+        *seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        ((*seed >> 8) as f32 / ((1u32 << 23) as f32)) - 1.0
+    }
+
+    fn random_vec(n: usize, seed: &mut u32) -> Vec<f32> {
+        (0..n).map(|_| lcg(seed)).collect()
+    }
+
+    #[allow(dead_code)] // only referenced when `matrixmultiply` is on
+    fn assert_gemms_agree(a: &[f32], b: &[f32], lhs: &[f32], rhs: &[f32], tol: f32, label: &str) {
+        assert_eq!(a.len(), b.len(), "{}: length mismatch", label);
+        for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+            let diff = (x - y).abs();
+            assert!(
+                diff < tol,
+                "{} mismatch at {}: naive={} mm={} diff={} \
+                 (lhs.len={}, rhs.len={})",
+                label,
+                i,
+                x,
+                y,
+                diff,
+                lhs.len(),
+                rhs.len(),
+            );
+        }
+    }
+
+    #[cfg(feature = "matrixmultiply")]
+    #[test]
+    fn test_kernel_agreement_64x64() {
+        let mut seed = 0xDEADBEEF_u32;
+        let m = 64;
+        let k = 64;
+        let n = 64;
+        let a = random_vec(m * k, &mut seed);
+        let b = random_vec(k * n, &mut seed);
+
+        let mut c_naive = vec![0.0_f32; m * n];
+        let mut c_mm = vec![0.0_f32; m * n];
+
+        sgemm_naive(m, k, n, 1.0, &a, k, &b, n, 0.0, &mut c_naive, n);
+        sgemm_mm(m, k, n, 1.0, &a, k, &b, n, 0.0, &mut c_mm, n);
+
+        assert_gemms_agree(&c_naive, &c_mm, &a, &b, 1e-3, "64x64 GEMM");
+    }
+
+    #[cfg(feature = "matrixmultiply")]
+    #[test]
+    fn test_kernel_agreement_matvec_shape() {
+        // Forward shape: m=out, k=in, n=1.  Shape used by Linear::forward.
+        let mut seed = 0x1234_5678_u32;
+        let m = 32;
+        let k = 17;
+        let w = random_vec(m * k, &mut seed);
+        let x = random_vec(k, &mut seed);
+        let bias = random_vec(m, &mut seed);
+
+        let mut y_naive = bias.clone();
+        let mut y_mm = bias.clone();
+
+        sgemm_naive(m, k, 1, 1.0, &w, k, &x, 1, 1.0, &mut y_naive, 1);
+        sgemm_mm(m, k, 1, 1.0, &w, k, &x, 1, 1.0, &mut y_mm, 1);
+
+        assert_gemms_agree(&y_naive, &y_mm, &w, &x, 1e-4, "matvec forward");
+    }
+
+    #[cfg(feature = "matrixmultiply")]
+    #[test]
+    fn test_kernel_agreement_outer_product_shape() {
+        // Backward dW shape: m=out, k=1, n=in.  Outer product d_out ⊗ x.
+        let mut seed = 0xC0FFEE_u32;
+        let m = 24;
+        let n = 19;
+        let d_out = random_vec(m, &mut seed);
+        let x = random_vec(n, &mut seed);
+
+        let mut dw_naive = vec![0.0_f32; m * n];
+        let mut dw_mm = vec![0.0_f32; m * n];
+
+        sgemm_naive(m, 1, n, 1.0, &d_out, 1, &x, n, 0.0, &mut dw_naive, n);
+        sgemm_mm(m, 1, n, 1.0, &d_out, 1, &x, n, 0.0, &mut dw_mm, n);
+
+        assert_gemms_agree(&dw_naive, &dw_mm, &d_out, &x, 1e-5, "outer product dW");
+    }
+
+    #[cfg(feature = "matrixmultiply")]
+    #[test]
+    fn test_kernel_agreement_row_times_matrix_shape() {
+        // Backward dx shape: m=1, k=out, n=in.  Row vector times matrix.
+        let mut seed = 0xBADBEEF_u32;
+        let k = 28;
+        let n = 13;
+        let d_out = random_vec(k, &mut seed);
+        let w = random_vec(k * n, &mut seed);
+
+        let mut dx_naive = vec![0.0_f32; n];
+        let mut dx_mm = vec![0.0_f32; n];
+
+        sgemm_naive(1, k, n, 1.0, &d_out, k, &w, n, 0.0, &mut dx_naive, n);
+        sgemm_mm(1, k, n, 1.0, &d_out, k, &w, n, 0.0, &mut dx_mm, n);
+
+        assert_gemms_agree(&dx_naive, &dx_mm, &d_out, &w, 1e-4, "row-times-matrix dx");
+    }
+
+    #[test]
+    fn test_naive_gemm_against_textbook_reference() {
+        // Even when matrixmultiply is off, the naive kernel must compute the
+        // textbook formula exactly.  Tiny 2x3 . 3x2 case worked out by hand.
+        let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // [2, 3]
+        let b = vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]; // [3, 2]
+        let mut c = vec![0.0_f32; 4];
+        sgemm_naive(2, 3, 2, 1.0, &a, 3, &b, 2, 0.0, &mut c, 2);
+        // c[0,0] = 1*7 + 2*9 + 3*11 = 58
+        // c[0,1] = 1*8 + 2*10 + 3*12 = 64
+        // c[1,0] = 4*7 + 5*9 + 6*11 = 139
+        // c[1,1] = 4*8 + 5*10 + 6*12 = 154
+        assert_eq!(c, vec![58.0, 64.0, 139.0, 154.0]);
     }
 }

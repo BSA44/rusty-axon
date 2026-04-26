@@ -107,23 +107,27 @@ impl Linear {
 
     /// Pure-`f32` inference path.  Always available (will be used by the
     /// Phase 6 `inference` feature).  Computes `y = activation(W @ x + b)`
-    /// without allocating any `Node`s.
+    /// without allocating any `Node`s.  Routes through the same
+    /// `sgemm_rm` kernel as the train-mode forward (matrixmultiply on the
+    /// default build, naive fallback under `naive-matmul`).
     ///
     /// # Panics
     ///
     /// Panics if `input.len() != in_dim` or `output.len() != out_dim`.
     pub fn infer_into_f32(&self, input: &[f32], output: &mut [f32]) {
-        assert_eq!(input.len(), self.tape.in_dim, "input length mismatch");
-        assert_eq!(output.len(), self.tape.out_dim, "output length mismatch");
+        let in_dim = self.tape.in_dim;
+        let out_dim = self.tape.out_dim;
+        assert_eq!(input.len(), in_dim, "input length mismatch");
+        assert_eq!(output.len(), out_dim, "output length mismatch");
         let weights = self.tape.weights.borrow();
         let bias = self.tape.bias.borrow();
-        for i in 0..self.tape.out_dim {
-            let row = i * self.tape.in_dim;
-            let mut acc = bias[i];
-            for j in 0..self.tape.in_dim {
-                acc += weights[row + j] * input[j];
-            }
-            output[i] = apply_activation_f32(&self.activation, acc);
+        // y = b + W @ x; same shape parameters as the train-mode forward.
+        output.copy_from_slice(&bias);
+        crate::engine::matmul::sgemm_rm(
+            out_dim, in_dim, 1, 1.0, &weights, in_dim, input, 1, 1.0, output, 1,
+        );
+        for slot in output.iter_mut() {
+            *slot = apply_activation_f32(&self.activation, *slot);
         }
     }
 

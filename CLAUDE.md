@@ -18,8 +18,8 @@ starting any phase.
 | 1     | Fused `MatMul` op + `MatMulTape`                           | ✅ |
 | 2     | `Linear` layer + `ParamView` Node enum                     | ✅ |
 | 3     | `Mlp` shim over `Linear`; legacy regression test           | ✅ |
-| 4     | `matrixmultiply` integration + naive fallback              | ⏳ next |
-| 5     | `.axn` model serialization                                 | ⏳ |
+| 4     | `matrixmultiply` integration + naive fallback              | ✅ |
+| 5     | `.axn` model serialization                                 | ⏳ next |
 | 6     | Inference-only feature gating + pure-`&[f32]` forward      | ⏳ |
 | 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ |
 | 8     | Static arena + criterion benchmark suite                   | ⏳ |
@@ -28,12 +28,18 @@ starting any phase.
 | 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ⏳ |
 | K     | `PAPER.md`, `COMPARISON.md`, Burn/Candle/TFLM/MicroFlow    | ⏳ |
 
-> **Note:** `Mlp` now composes `Linear` (fused [`MatMulTape`](src/engine/matmul.rs))
+> **Note:** `Mlp` now composes `Linear` (fused [`MatMulTape`](src/engine/matmul/mod.rs))
 > end-to-end after Phase 3. The legacy `Neuron` / `Layer` modules are kept on
 > disk as the scalar baseline that Phase 8's speedup-vs-fused benchmark uses;
 > nothing else in the train path touches them. Optimizers (`Sgd`, `MeProp`)
 > dedupe parameter Nodes by tape pointer in `zero_state` to call
-> `MatMulTape::reset_grads()` exactly once per layer.
+> `MatMulTape::reset_grads()` exactly once per layer.  Phase 4 routes the
+> three GEMM call sites — forward `y = W @ x + b`, backward `dW = d_out ⊗ x`,
+> backward `dx = Wᵀ d_out` — through `kernel::sgemm_rm`, which compile-time
+> selects between [`kernel_mm`](src/engine/matmul/kernel_mm.rs) (matrixmultiply,
+> auto-NEON on aarch64) and [`kernel_naive`](src/engine/matmul/kernel_naive.rs)
+> (forced via `--features naive-matmul`).  `Linear::infer_into_f32` uses the
+> same kernel.
 
 ## File structure
 
@@ -42,7 +48,11 @@ src/
 ├── engine/
 │   ├── value.rs               # Node, Value, operators, backward(), to_dot()
 │   ├── ops.rs                 # Operation enum (incl. MatMul variant)
-│   ├── matmul.rs              # MatMulTape: fused matmul forward/backward       (Phase 1)
+│   ├── matmul/
+│   │   ├── mod.rs             # MatMulTape: fused matmul forward/backward       (Phase 1)
+│   │   ├── kernel.rs          # cfg-gated `sgemm_rm` re-export                  (Phase 4)
+│   │   ├── kernel_naive.rs    # naive scalar fallback                            (Phase 4)
+│   │   └── kernel_mm.rs       # matrixmultiply-backed (auto-NEON on aarch64)    (Phase 4)
 │   └── tests.rs               # autograd + matmul correctness tests
 ├── nn/
 │   ├── linear.rs              # fused Linear layer (forward, infer_into_f32)    (Phase 2)
