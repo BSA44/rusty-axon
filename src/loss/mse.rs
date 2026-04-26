@@ -14,6 +14,6 @@ impl Loss for MeanSquaredError {
         for (prediction, target) in predictions.iter().zip(targets.iter()) {
             loss = loss + (prediction.clone() - target.clone()).pow(2.0);
         }
-        loss / predictions.len() as f64
+        loss / predictions.len() as f32
     }
 }

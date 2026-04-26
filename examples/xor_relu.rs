@@ -83,7 +83,7 @@ fn main() {
 
         // Print progress
         if epoch % print_every == 0 || epoch == epochs - 1 {
-            let avg_loss = total_loss / training_data.len() as f64;
+            let avg_loss = total_loss / training_data.len() as f32;
             println!("Epoch {:4} | Loss: {:.6}", epoch, avg_loss);
         }
     }

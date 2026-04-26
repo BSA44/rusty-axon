@@ -144,7 +144,7 @@ fn main() {
 
     // XOR Dataset (hardcoded)
     // Input: [x1, x2] -> Output: x1 XOR x2
-    let training_data: Vec<(Vec<f64>, f64)> = vec![
+    let training_data: Vec<(Vec<f32>, f32)> = vec![
         (vec![0.0, 0.0], 0.0), // 0 XOR 0 = 0
         (vec![0.0, 1.0], 1.0), // 0 XOR 1 = 1
         (vec![1.0, 0.0], 1.0), // 1 XOR 0 = 1
@@ -199,7 +199,7 @@ fn main() {
 
         // Print progress
         if epoch % print_every == 0 || epoch == epochs - 1 {
-            let avg_loss = total_loss / training_data.len() as f64;
+            let avg_loss = total_loss / training_data.len() as f32;
             println!("Epoch {:4} | Loss: {:.6}", epoch, avg_loss);
         }
     }

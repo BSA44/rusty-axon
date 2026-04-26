@@ -48,34 +48,34 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(value: f64) -> Self {
+    pub fn new(value: f32) -> Self {
         Self::with_operation(value, Operation::None)
     }
 
-    fn with_operation(value: f64, operation: Operation) -> Self {
+    fn with_operation(value: f32, operation: Operation) -> Self {
         Self {
             value: Rc::new(RefCell::new(Value::new(value, operation))),
         }
     }
 
-    pub fn set_value(&mut self, value: f64) {
+    pub fn set_value(&mut self, value: f32) {
         self.value.borrow_mut().set_value(value);
     }
 
     // to get the value of the node
-    pub fn get_value(&self) -> f64 {
+    pub fn get_value(&self) -> f32 {
         self.value.borrow().get_value()
     }
 
-    pub fn get_gradient(&self) -> f64 {
+    pub fn get_gradient(&self) -> f32 {
         self.value.borrow().get_gradient()
     }
 
-    pub fn set_gradient(&mut self, gradient: f64) {
+    pub fn set_gradient(&mut self, gradient: f32) {
         self.value.borrow_mut().set_gradient(gradient);
     }
 
-    pub fn add_gradient(&self, gradient: f64) {
+    pub fn add_gradient(&self, gradient: f32) {
         self.value.borrow_mut().gradient += gradient;
     }
 
@@ -204,7 +204,7 @@ impl Node {
         }
     }
 
-    pub fn pow(&self, exponent: f64) -> Node {
+    pub fn pow(&self, exponent: f32) -> Node {
         Node::with_operation(
             self.get_value().powf(exponent),
             Operation::Pow {
@@ -223,7 +223,7 @@ impl Node {
         )
     }
 
-    pub fn log(&self, base: f64) -> Node {
+    pub fn log(&self, base: f32) -> Node {
         Node::with_operation(
             self.get_value().log(base),
             Operation::Log {
@@ -632,14 +632,14 @@ impl Neg for Node {
 
 #[derive(Debug)]
 pub struct Value {
-    value: f64,
-    gradient: f64,
+    value: f32,
+    gradient: f32,
     operation: Operation,
 }
 
 impl Value {
     /// Construct a value node from raw data.
-    pub fn new(value: f64, operation: Operation) -> Self {
+    pub fn new(value: f32, operation: Operation) -> Self {
         Self {
             value,
             gradient: 0.0,
@@ -647,7 +647,7 @@ impl Value {
         }
     }
 
-    pub fn with_operation(value: f64, operation: Operation) -> Self {
+    pub fn with_operation(value: f32, operation: Operation) -> Self {
         Self {
             value,
             gradient: 0.0,
@@ -655,15 +655,15 @@ impl Value {
         }
     }
 
-    pub fn set_value(&mut self, value: f64) {
+    pub fn set_value(&mut self, value: f32) {
         self.value = value;
     }
 
-    pub fn get_value(&self) -> f64 {
+    pub fn get_value(&self) -> f32 {
         self.value
     }
 
-    pub fn get_gradient(&self) -> f64 {
+    pub fn get_gradient(&self) -> f32 {
         self.gradient
     }
 
@@ -671,37 +671,39 @@ impl Value {
         self.operation.clone()
     }
 
-    pub fn set_gradient(&mut self, gradient: f64) {
+    pub fn set_gradient(&mut self, gradient: f32) {
         self.gradient = gradient;
-    }
-}
-
-impl From<f64> for Node {
-    fn from(value: f64) -> Self {
-        Self::new(value)
     }
 }
 
 impl From<f32> for Node {
     fn from(value: f32) -> Self {
-        Self::new(value as f64)
+        Self::new(value)
+    }
+}
+
+// Lossy convenience: callers passing f64 literals (`Node::from(2.0)`) keep
+// working through Phase 0.5; the engine itself is f32 end-to-end.
+impl From<f64> for Node {
+    fn from(value: f64) -> Self {
+        Self::new(value as f32)
     }
 }
 
 impl From<i32> for Node {
     fn from(value: i32) -> Self {
-        Self::new(value as f64)
+        Self::new(value as f32)
     }
 }
 
 impl From<i64> for Node {
     fn from(value: i64) -> Self {
-        Self::new(value as f64)
+        Self::new(value as f32)
     }
 }
 
-// Invoke macros to generate scalar operation implementations
-//impl_ops_for_scalar!(i64);
-//impl_ops_for_scalar!(f32);
-//impl_ops_for_scalar!(i32);
-impl_ops_for_scalar!(f64);
+// Scalar op-with-Node impls only on `f32` — the engine's native precision
+// after Phase 0.5. Adding an additional `f64` macro would make untyped float
+// literals (e.g. `node * 2.0`) ambiguous between two equally-valid impls.
+// Untyped literals constrain to `f32` here through the only available impl.
+impl_ops_for_scalar!(f32);

@@ -45,8 +45,8 @@ fn main() {
         x.get_gradient()
     );
 
-    let x2 = Node::from(std::f64::consts::E);
-    let mut ln_x = x2.clone().log(std::f64::consts::E);
+    let x2 = Node::from(std::f32::consts::E);
+    let mut ln_x = x2.clone().log(std::f32::consts::E);
     ln_x.backward();
     println!(
         "   ln(e) = {:.4}, d/dx ln(x) = {:.4}",

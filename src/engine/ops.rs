@@ -11,10 +11,10 @@ pub enum Operation {
     Sub { minuend: Node, subtrahend: Node },
     Mul { left: Node, right: Node },
     Div { dividend: Node, divisor: Node },
-    Pow { base: Node, exponent: f64 },
+    Pow { base: Node, exponent: f32 },
     Exp { exponent: Node },
     Neg { operand: Node },
-    Log { base: f64, operand: Node },
+    Log { base: f32, operand: Node },
     ReLU { input: Node },
     None,
 }

@@ -14,8 +14,8 @@ starting any phase.
 | Phase | Focus | Status |
 |------:|-------|--------|
 | 0     | Repo hygiene, feature flags, profiles, CI | ✅ done |
-| 0.5   | `f64 → f32` engine migration | ⏳ next |
-| 1     | Fused `MatMul` op + `MatMulTape` | ⏳ |
+| 0.5   | `f64 → f32` engine migration | ✅ done |
+| 1     | Fused `MatMul` op + `MatMulTape` | ⏳ next |
 | 2     | `Linear` layer + `ParamView` Node enum | ⏳ |
 | 3     | `Mlp` shim over `Linear`; legacy regression test | ⏳ |
 | 4     | `matrixmultiply` integration + naive fallback | ⏳ |
@@ -32,7 +32,7 @@ starting any phase.
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| Scalar autograd engine | `src/engine/` | ✅ Complete (`f64`; migrates to `f32` in Phase 0.5) |
+| Scalar autograd engine | `src/engine/` | ✅ Complete (`f32` end-to-end; migrated in Phase 0.5) |
 | Neural networks (`Neuron`/`Layer`/`Mlp`) | `src/nn/` | ✅ Complete (legacy scalar; `Linear` lands in Phase 2) |
 | Optimizers | `src/optim/` | ✅ SGD, MeProp |
 | Loss functions | `src/loss/` | ✅ MSE, RMSE, CrossEntropy |
@@ -139,10 +139,10 @@ pub enum Operation {
     Sub { minuend: Node, subtrahend: Node },
     Mul { left: Node, right: Node },
     Div { dividend: Node, divisor: Node },
-    Pow { base: Node, exponent: f64 },   // f32 after Phase 0.5
+    Pow { base: Node, exponent: f32 },
     Exp { exponent: Node },
     Neg { operand: Node },
-    Log { base: f64, operand: Node },    // f32 after Phase 0.5
+    Log { base: f32, operand: Node },
     ReLU { input: Node },
     None,                                 // Leaf nodes
     // Phase 1: MatMul { tape: Rc<MatMulTape>, output_index: usize }

@@ -115,7 +115,7 @@ fn compute_rmse(model: &Mlp, x: &[Vec<f64>], y: &[f64], loss_fn: &MeanSquaredErr
 
     let targets: Vec<Node> = y.iter().map(|&v| Node::from(v)).collect();
     let mse = loss_fn.forward(&predictions, &targets).get_value();
-    mse.sqrt()
+    (mse as f64).sqrt()
 }
 
 fn main() {
@@ -207,7 +207,10 @@ fn main() {
         }
 
         // Compute metrics
-        let mean_loss: f64 = losses.iter().sum::<f64>() / losses.len() as f64;
+        // Engine is f32 → widen to f64 to keep the bench mean precise across
+        // many batches.
+        let mean_loss: f64 =
+            losses.iter().map(|&l| l as f64).sum::<f64>() / losses.len() as f64;
         let rmse = compute_rmse(&mlp, &x, &y, &loss_fn);
 
         let epoch_time = t0.elapsed().as_secs_f64();

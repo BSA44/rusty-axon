@@ -5,13 +5,13 @@ use crate::engine::value::Node;
 use crate::optim::optimizer::Optimizer;
 /// Classic stochastic gradient descent optimizer.
 pub struct Sgd {
-    learning_rate: f64,
+    learning_rate: f32,
     parameters: Vec<Node>,
 }
 
 impl Sgd {
     /// Create a new SGD optimizer.
-    pub fn new(learning_rate: f64, parameters: Vec<Node>) -> Self {
+    pub fn new(learning_rate: f32, parameters: Vec<Node>) -> Self {
         Self {
             learning_rate,
             parameters,

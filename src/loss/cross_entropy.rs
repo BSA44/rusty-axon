@@ -1,11 +1,11 @@
 use crate::engine::value::Node;
 use crate::loss::loss::Loss;
 pub struct CrossEntropy {
-    label_smoothing: f64,
+    label_smoothing: f32,
 }
 
 impl CrossEntropy {
-    pub fn new(label_smoothing: f64) -> Self {
+    pub fn new(label_smoothing: f32) -> Self {
         Self {
             label_smoothing: label_smoothing.clamp(0.0, 1.0),
         }
@@ -16,7 +16,7 @@ impl CrossEntropy {
         let max = logits
             .iter()
             .map(|l| l.get_value())
-            .fold(f64::NEG_INFINITY, f64::max);
+            .fold(f32::NEG_INFINITY, f32::max);
 
         //compute exp(logits-max) as Nodes
         //let max_node = Node::from(max);
@@ -36,7 +36,7 @@ impl CrossEntropy {
             .iter()
             .map(|t| {
                 (1.0 - self.label_smoothing) * t.clone()
-                    + self.label_smoothing / (num_of_classes as f64)
+                    + self.label_smoothing / (num_of_classes as f32)
             })
             .collect()
     }
@@ -54,10 +54,11 @@ impl Loss for CrossEntropy {
         let smooth_targets = self.smooth_targets(targets);
 
         for (probability, target) in probabilities.iter().zip(smooth_targets.iter()) {
-            loss =
-                loss + (-target.clone() * (probability.clone() + 1e-10).log(std::f64::consts::E));
-            //adding small const to avoid erros
+            // Add a small epsilon before log to avoid log(0); 1e-7 is the
+            // standard f32-safe clamp (matches PyTorch's CE epsilon).
+            loss = loss
+                + (-target.clone() * (probability.clone() + 1e-7).log(std::f32::consts::E));
         }
-        loss / logits.len() as f64
+        loss / logits.len() as f32
     }
 }

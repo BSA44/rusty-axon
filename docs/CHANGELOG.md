@@ -5,6 +5,40 @@ All notable changes to the Rusty-Axon project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Unreleased
+
+The 0.3 line reframes the project as a training-capable edge framework,
+following the 13-phase plan in [`docs/PAPER_REWORK_PLAN.md`](PAPER_REWORK_PLAN.md).
+Phases 0 and 0.5 are complete; remaining phases land incrementally.
+
+### Phase 0 — Repo hygiene, feature flags, profiles, CI
+
+- ✅ `default = ["train", "matrixmultiply"]`; new feature flags: `train`,
+  `inference`, `matrixmultiply` (`=0.3.9` pinned), `naive-matmul`, `quant-i8`.
+- ✅ `release-edge` profile (`lto = "fat"`, `codegen-units = 1`,
+  `panic = "abort"`, `opt-level = "z"`, `strip = "symbols"`).
+- ✅ `rust-toolchain.toml` (1.87.0 + rustfmt + clippy), `clippy.toml`,
+  `rustfmt.toml`, `.cargo/config.toml` placeholder, `.github/workflows/ci.yml`
+  (fmt + clippy advisory + test matrix).
+- ✅ Every `[[bin]]`/`[[example]]` gated on `required-features = ["train"]`.
+
+### Phase 0.5 — Engine `f64 → f32`
+
+- ✅ `Value::value` and `Value::gradient` are now `f32`. `Node::new`,
+  accessors, `pow`, `exp`, `log`, and the `Operation::{Pow, Log}` payloads
+  all moved to `f32`.
+- ✅ `From<f64> for Node` retained as a lossy convenience so legacy callers
+  keep compiling; `From<f32>`, `From<i32>`, `From<i64>` all cast to `f32`.
+- ✅ Scalar arithmetic macros now resolve only against `f32` (untyped float
+  literals constrain to `f32` through the single available impl; adding a
+  parallel `f64` impl would create literal ambiguity).
+- ✅ `Sgd::learning_rate`, `MeProp::learning_rate`, and
+  `CrossEntropy::label_smoothing` migrated to `f32`. Loss aggregations divide
+  by `len() as f32`.
+- ✅ Engine tests bumped from `1e-6` (f64) to `1e-5` (f32) tolerance; all 45
+  unit tests green. XOR demo still converges to a perfect truth table.
+- ✅ New `test_value_struct_is_f32_packed` regression locks the size win.
+
 ## [0.2.0] - 2024-11-29
 
 ### Added - Optimizers

@@ -257,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Average loss over batch
-            let actual_batch_size = (end - start) as f64;
+            let actual_batch_size = (end - start) as f32;
             batch_loss = batch_loss / actual_batch_size;
             epoch_loss += batch_loss.get_value();
 
@@ -267,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Calculate metrics
-        let avg_loss = epoch_loss / num_batches as f64;
+        let avg_loss = epoch_loss / num_batches as f32;
         let train_acc = epoch_correct as f64 / train_images.len() as f64 * 100.0;
         let test_acc = evaluate(&mlp, &test_images, &test_labels);
         let epoch_time = epoch_start.elapsed();

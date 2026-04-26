@@ -166,7 +166,9 @@ fn compute_loss(model: &Mlp, x: &[Vec<f64>], y: &[usize], loss_fn: &CrossEntropy
             let inputs: Vec<Node> = x_i.iter().map(|&v| Node::from(v)).collect();
             let logits = model.forward(&inputs);
             let targets = one_hot(y_i, 2);
-            loss_fn.forward(&logits, &targets).get_value()
+            // Engine is f32; widen to f64 here so the bench harness keeps
+            // its higher-precision aggregate (means over thousands of samples).
+            loss_fn.forward(&logits, &targets).get_value() as f64
         })
         .sum();
     total_loss / x.len() as f64

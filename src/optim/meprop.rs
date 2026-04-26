@@ -2,13 +2,13 @@ use crate::engine::value::Node;
 use crate::optim::optimizer::Optimizer;
 
 pub struct MeProp {
-    learning_rate: f64,
+    learning_rate: f32,
     parameters: Vec<Node>,
     top_k: f32,
 }
 
 impl MeProp {
-    pub fn new(learning_rate: f64, parameters: Vec<Node>, top_k: f32) -> Self {
+    pub fn new(learning_rate: f32, parameters: Vec<Node>, top_k: f32) -> Self {
         Self {
             learning_rate,
             parameters,
@@ -27,7 +27,7 @@ impl Optimizer for MeProp {
         let k = (self.top_k * (total_params as f32)).ceil() as usize;
         let k = k.max(1).min(total_params); // Also cap at total_params
 
-        let mut param_grads: Vec<(&mut Node, f64)> = self
+        let mut param_grads: Vec<(&mut Node, f32)> = self
             .parameters
             .iter_mut()
             .map(|p| {

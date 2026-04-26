@@ -4,9 +4,11 @@
 mod tests {
     use crate::engine::value::Node;
 
-    const EPSILON: f64 = 1e-6;
+    // Engine is f32 end-to-end after Phase 0.5; ~1e-5 is the practical
+    // accuracy of f32 accumulation over the small graphs exercised here.
+    const EPSILON: f32 = 1e-5;
 
-    fn assert_close(actual: f64, expected: f64, msg: &str) {
+    fn assert_close(actual: f32, expected: f32, msg: &str) {
         assert!(
             (actual - expected).abs() < EPSILON,
             "{}: expected {}, got {} (diff: {})",
@@ -105,7 +107,7 @@ mod tests {
         let mut f = x.exp();
         f.backward();
 
-        let e = std::f64::consts::E;
+        let e = std::f32::consts::E;
         assert_close(f.get_value(), e, "forward value");
         assert_close(x.get_gradient(), e, "df/dx");
     }
@@ -271,7 +273,7 @@ mod tests {
         let mut f = two_x.exp();
         f.backward();
 
-        let e2 = (2.0_f64).exp();
+        let e2 = (2.0_f32).exp();
         assert_close(f.get_value(), e2, "forward value");
         assert_close(x.get_gradient(), 2.0 * e2, "df/dx");
     }
@@ -289,7 +291,7 @@ mod tests {
         f.backward();
 
         // tanh(0.5) ≈ 0.46211715726
-        let expected_val = 0.5_f64.tanh();
+        let expected_val = 0.5_f32.tanh();
         assert_close(f.get_value(), expected_val, "forward value");
 
         // d/dx tanh(x) = 1 - tanh²(x)
@@ -437,6 +439,24 @@ mod tests {
 
         // Check that operation is present
         assert!(dot.contains("label=\"+\""));
+    }
+
+    #[test]
+    fn test_value_struct_is_f32_packed() {
+        // Phase 0.5 acceptance: value (f32) + gradient (f32) + Operation enum.
+        // The two scalar fields must occupy 8 bytes total — half of the f64
+        // engine — and Operation is the enum tail.
+        use crate::engine::value::Value;
+        // Sanity: each scalar field is 4 bytes, not 8.
+        assert_eq!(std::mem::size_of::<f32>(), 4);
+        // The two scalar fields together are 8 bytes; Operation adds its
+        // discriminant + payload after them. We only assert the scalar
+        // contribution (the 8 B reduction is the paper-relevant figure).
+        assert!(
+            std::mem::size_of::<Value>() < std::mem::size_of::<(f64, f64)>()
+                + std::mem::size_of::<crate::engine::ops::Operation>(),
+            "Value should be smaller than the f64 layout would have been"
+        );
     }
 
     #[test]
