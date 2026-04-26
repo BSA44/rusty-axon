@@ -1,28 +1,83 @@
 //! Multi-layer perceptron convenience wrapper.
+//!
+//! Phase 3 swaps the internal `Vec<Layer>` (legacy scalar `Neuron` dot
+//! products) for `Vec<Linear>` (fused [`MatMulTape`] per layer).  The public
+//! API — `Mlp::new`, `forward`, `parameters`, the visualization helpers —
+//! is unchanged so every existing example continues to build and run.  The
+//! legacy `Layer`/`Neuron` modules are kept on disk as the scalar baseline
+//! that Phase 8 benchmarks against.
+
+use std::ops::Range;
 
 use crate::engine::value::Node;
 use crate::nn::activations::Activations;
-use crate::nn::layer::Layer;
+use crate::nn::linear::Linear;
 use crate::nn::visualization::{render_network_to, NetworkVisualizationConfig};
 
-/// Simple feed-forward neural network composed of sequential layers.
+/// Simple feed-forward neural network composed of sequential `Linear` layers.
 pub struct Mlp {
-    layers: Vec<Layer>,
+    layers: Vec<Linear>,
     layer_sizes: Vec<usize>,
 }
 
 impl Mlp {
     /// Construct an MLP from a list of layer widths.
+    ///
+    /// `layer_widths.len() == activations.len() + 1`: there is one `Linear`
+    /// per gap between widths, each carrying the matching activation.
     pub fn new(layer_widths: &[usize], activations: &[Activations]) -> Self {
-        let mut mlp = Self {
-            layers: Vec::new(),
-            layer_sizes: layer_widths.to_vec(),
-        };
+        assert!(
+            layer_widths.len() >= 2,
+            "Mlp requires at least an input and output width"
+        );
+        assert_eq!(
+            activations.len(),
+            layer_widths.len() - 1,
+            "expected {} activations, got {}",
+            layer_widths.len() - 1,
+            activations.len()
+        );
+
+        let mut layers = Vec::with_capacity(layer_widths.len() - 1);
         for i in 0..layer_widths.len() - 1 {
-            let layer = Layer::new(layer_widths[i], layer_widths[i + 1], &activations[i]);
-            mlp.layers.push(layer);
+            layers.push(Linear::new(
+                layer_widths[i],
+                layer_widths[i + 1],
+                activations[i].clone(),
+            ));
         }
-        mlp
+
+        Self {
+            layers,
+            layer_sizes: layer_widths.to_vec(),
+        }
+    }
+
+    /// Construct an MLP from caller-supplied `Linear` layers (test fixtures,
+    /// `Mlp::load` in Phase 5, fine-tune helpers in Phase 11).  Validates
+    /// that successive layers chain dimensionally.
+    pub fn with_layers(layers: Vec<Linear>) -> Self {
+        assert!(!layers.is_empty(), "Mlp::with_layers requires >=1 layer");
+        for w in layers.windows(2) {
+            assert_eq!(
+                w[0].out_dim(),
+                w[1].in_dim(),
+                "layer dimensions do not chain: {} -> {} then {} -> {}",
+                w[0].in_dim(),
+                w[0].out_dim(),
+                w[1].in_dim(),
+                w[1].out_dim(),
+            );
+        }
+        let mut layer_sizes = Vec::with_capacity(layers.len() + 1);
+        layer_sizes.push(layers[0].in_dim());
+        for l in &layers {
+            layer_sizes.push(l.out_dim());
+        }
+        Self {
+            layers,
+            layer_sizes,
+        }
     }
 
     /// Evaluate the network on a single input example.
@@ -34,11 +89,46 @@ impl Mlp {
         current
     }
 
+    /// All trainable parameters across every layer.  Order: layer-0 weights,
+    /// layer-0 biases, layer-1 weights, layer-1 biases, ...
     pub fn parameters(&self) -> Vec<Node> {
         self.layers
             .iter()
             .flat_map(|layer| layer.parameters())
             .collect()
+    }
+
+    /// Borrow one layer of the network.
+    ///
+    /// # Panics
+    /// Panics if `idx >= num_layers() - 1` (i.e. out of the layer range, not
+    /// the width range).
+    pub fn layer(&self, idx: usize) -> &Linear {
+        &self.layers[idx]
+    }
+
+    /// Parameters from a contiguous slice of layers, e.g.
+    /// `mlp.parameters_for_layers(2..3)` for last-layer-only fine-tune
+    /// (Phase 11 demo target).
+    ///
+    /// # Panics
+    /// Panics if `range` falls outside `0..num_linear_layers()`.
+    pub fn parameters_for_layers(&self, range: Range<usize>) -> Vec<Node> {
+        assert!(
+            range.end <= self.layers.len(),
+            "parameters_for_layers: range {:?} exceeds {} layers",
+            range,
+            self.layers.len()
+        );
+        self.layers[range]
+            .iter()
+            .flat_map(|layer| layer.parameters())
+            .collect()
+    }
+
+    /// Number of `Linear` layers (i.e. `layer_widths.len() - 1`).
+    pub fn num_linear_layers(&self) -> usize {
+        self.layers.len()
     }
 
     /// Generate layer names for visualization
@@ -70,7 +160,7 @@ impl Mlp {
 
         // Each subsequent layer has an activation from the corresponding layer
         for layer in &self.layers {
-            names.push(format!("{}", layer.get_activation()));
+            names.push(format!("{}", layer.activation()));
         }
 
         names

@@ -16,9 +16,9 @@ starting any phase.
 | 0     | Repo hygiene, feature flags, profiles, CI                  | ✅ |
 | 0.5   | `f64 → f32` engine migration                               | ✅ |
 | 1     | Fused `MatMul` op + `MatMulTape`                           | ✅ |
-| 2     | `Linear` layer + `ParamView` Node enum                     | ⏳ next |
-| 3     | `Mlp` shim over `Linear`; legacy regression test           | ⏳ |
-| 4     | `matrixmultiply` integration + naive fallback              | ⏳ |
+| 2     | `Linear` layer + `ParamView` Node enum                     | ✅ |
+| 3     | `Mlp` shim over `Linear`; legacy regression test           | ✅ |
+| 4     | `matrixmultiply` integration + naive fallback              | ⏳ next |
 | 5     | `.axn` model serialization                                 | ⏳ |
 | 6     | Inference-only feature gating + pure-`&[f32]` forward      | ⏳ |
 | 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ |
@@ -28,10 +28,12 @@ starting any phase.
 | 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ⏳ |
 | K     | `PAPER.md`, `COMPARISON.md`, Burn/Candle/TFLM/MicroFlow    | ⏳ |
 
-> **Note:** the fused `MatMul` op + `MatMulTape` exist in the engine but
-> nothing user-facing uses them yet. `Mlp` still composes `Layer` →
-> `Neuron` (legacy scalar dot products). Phase 2 introduces `Linear` and
-> Phase 3 swaps `Mlp` over.
+> **Note:** `Mlp` now composes `Linear` (fused [`MatMulTape`](src/engine/matmul.rs))
+> end-to-end after Phase 3. The legacy `Neuron` / `Layer` modules are kept on
+> disk as the scalar baseline that Phase 8's speedup-vs-fused benchmark uses;
+> nothing else in the train path touches them. Optimizers (`Sgd`, `MeProp`)
+> dedupe parameter Nodes by tape pointer in `zero_state` to call
+> `MatMulTape::reset_grads()` exactly once per layer.
 
 ## File structure
 
@@ -43,13 +45,13 @@ src/
 │   ├── matmul.rs              # MatMulTape: fused matmul forward/backward       (Phase 1)
 │   └── tests.rs               # autograd + matmul correctness tests
 ├── nn/
-│   ├── neuron.rs              # legacy scalar single neuron
-│   ├── layer.rs               # legacy scalar fully-connected layer
-│   ├── mlp.rs                 # multi-layer perceptron (still on Layer/Neuron)
+│   ├── linear.rs              # fused Linear layer (forward, infer_into_f32)    (Phase 2)
+│   ├── param_view.rs          # ParamView leaf re-export for Node               (Phase 2)
+│   ├── mlp.rs                 # multi-layer perceptron over Vec<Linear>         (Phase 3)
 │   ├── activations.rs         # Sigmoid, Tanh, ReLU, Swish, None
 │   ├── visualization.rs       # layer-oriented network diagrams
-│   ├── linear.rs              # fused Linear layer                              (Phase 2)
-│   ├── param_view.rs          # ParamView leaf for Node                         (Phase 2)
+│   ├── neuron.rs              # legacy scalar single neuron (Phase 8 baseline)
+│   ├── layer.rs               # legacy scalar fully-connected layer (Phase 8 baseline)
 │   ├── arena.rs               # static inference arena                          (Phase 8)
 │   ├── quant.rs               # INT8 PTQ                                        (Phase 7)
 │   └── tests.rs
@@ -100,13 +102,21 @@ exactly once.
 ### Node
 
 ```rust
-pub struct Node { value: Rc<RefCell<Value>> }
+pub struct Node { storage: NodeStorage }
+
+enum NodeStorage {
+    Owned(Rc<RefCell<Value>>),  // every non-MatMul op produces these
+    Param(ParamView),            // weight/bias view into a MatMulTape buffer
+}
 ```
 
-Cheap clone, interior mutability for gradient updates. Phase 2 turns
-`Node` into an enum `Owned(Rc<RefCell<Value>>) | Param(ParamView)`, where
-`Param` views route reads/writes into a flat `Vec<f32>` inside a
-`MatMulTape` (so `sgemm` can consume the buffer directly).
+Cheap clone, interior mutability for gradient updates.  `Param` views route
+`get_value`/`set_value`/`get_gradient`/`add_gradient` into a flat `Vec<f32>`
+inside a `MatMulTape` (so `matrixmultiply::sgemm` can consume the buffer
+directly in Phase 4).  `Param` Nodes report `Operation::None` and are
+treated as leaves by the topo walk.  `PartialEq`/`Hash` compare structurally
+on `(tape ptr, kind, index)` so fresh `Linear::parameters()` clones dedupe
+correctly in the topo `HashSet`.
 
 ### Operation
 
@@ -139,9 +149,17 @@ Each output `Node` of one matmul carries `(Rc<MatMulTape>, output_index)`:
    by `tape.topo_walked`); `Node::backward` resets that flag at the end.
 
 `d_weights` and `d_bias` accumulate across backward passes until
-`MatMulTape::reset_grads()` is called (Phase 2 wires this into
-`Optimizer::zero_state`). `d_out`, `visit_count`, `backward_done`, and
+`MatMulTape::reset_grads()` is called.  `Sgd::zero_state` and
+`MeProp::zero_state` dedupe parameter Nodes by tape pointer and call
+`reset_grads()` once per unique tape (otherwise it would fire `in*out + out`
+times per layer).  `d_out`, `visit_count`, `backward_done`, and
 `topo_walked` reset every `forward()`.
+
+The `dx = Wᵀ d_out` upstream propagation is **skipped** when every input
+to `MatMulTape::forward` is a leaf (`Operation::None`) — there is nothing
+to propagate into.  Multi-layer MLPs always trip the non-leaf branch from
+layer 1 onward; only feeding raw `Node::from(x)` directly to a single
+`Linear` hits the fast path.
 
 ### Training pattern
 
@@ -198,7 +216,7 @@ cargo run --release --example mnist_classifier
 - `cargo fmt --all -- --check` is enforced in CI; the v0.2 codebase has
   been reformatted to match `rustfmt.toml`.
 - `cargo clippy` is **advisory** during the rework (no `-D warnings`). The
-  legacy `Neuron`/`Layer`/`Mlp` modules carry cosmetic warnings
-  (`needless_return`, `module_inception`, `redundant_field_names`, …)
-  that will be swept up naturally as those files are rewritten in Phase
-  3. Flip back to deny-warnings after Phase 3.
+  legacy `Neuron`/`Layer` modules retain cosmetic warnings
+  (`needless_return`, `redundant_field_names`, …); they are kept verbatim
+  as the Phase 8 scalar-baseline benchmark target.  Flip back to
+  deny-warnings after Phase 8 retires the baseline.

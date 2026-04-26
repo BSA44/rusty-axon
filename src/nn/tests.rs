@@ -2,6 +2,7 @@
 mod tests {
     use crate::engine::Node;
     use crate::nn::activations::Activations;
+    use crate::nn::mlp::Mlp;
     use crate::nn::neuron::Neuron;
 
     #[test]
@@ -472,6 +473,324 @@ mod tests {
         assert_ne!(params[0], params[4]);
         assert_eq!(ParamKind::Weight, ParamKind::Weight);
         assert_ne!(ParamKind::Weight, ParamKind::Bias);
+    }
+
+    // -----------------------------------------------------------------
+    // Phase 3 — `Mlp` backed by `Linear`
+    // -----------------------------------------------------------------
+
+    /// Layer of "legacy" scalar-Node neurons with caller-supplied weights
+    /// (row-major `[out_dim, in_dim]`) and biases.  Returns the per-output
+    /// activated Nodes plus the Vec of weight Nodes (length out*in) and
+    /// bias Nodes (length out) so the caller can read their gradients
+    /// after backward.
+    #[allow(clippy::type_complexity)]
+    fn legacy_layer_forward_with_params(
+        weights: &[f32],
+        bias: &[f32],
+        inputs: &[Node],
+        activation: &Activations,
+        in_dim: usize,
+        out_dim: usize,
+    ) -> (Vec<Node>, Vec<Node>, Vec<Node>) {
+        let weight_nodes: Vec<Node> = weights.iter().map(|&w| Node::from(w)).collect();
+        let bias_nodes: Vec<Node> = bias.iter().map(|&b| Node::from(b)).collect();
+        let outs: Vec<Node> = (0..out_dim)
+            .map(|i| {
+                let mut acc = bias_nodes[i].clone();
+                for j in 0..in_dim {
+                    acc = acc + weight_nodes[i * in_dim + j].clone() * inputs[j].clone();
+                }
+                activation.apply(acc)
+            })
+            .collect();
+        (outs, weight_nodes, bias_nodes)
+    }
+
+    #[test]
+    fn test_mlp_matches_legacy_scalar_path() {
+        // Phase 3 acceptance: identical-weight `Mlp` (Linear-based) and the
+        // legacy scalar-Node forward path agree on forward outputs and on
+        // parameter gradients within 1e-4 — the cumulative f32 rounding
+        // budget the plan calls out (~`fanin * eps_f32`).  Parameter
+        // gradients are the contract that matters for training equivalence
+        // (and they exercise the fused `dW = d_out ⊗ x` path); raw input
+        // gradients are intentionally not propagated by `MatMulTape` when
+        // the inputs are leaves, so they're not part of this contract.
+        const TOL: f32 = 1e-4;
+
+        // Deterministic LCG so the test does not depend on `rand`.
+        let mut seed: u32 = 0x9E3779B9;
+        let mut next = |s: &mut u32| -> f32 {
+            *s = s.wrapping_mul(1103515245).wrapping_add(12345);
+            ((*s >> 8) as f32 / ((1u32 << 23) as f32)) - 1.0
+        };
+
+        let dims = [5usize, 6, 3];
+        let acts = [Activations::Tanh, Activations::None];
+
+        // Generate per-layer weights/biases.
+        let layer_weights: Vec<Vec<f32>> = dims
+            .windows(2)
+            .map(|w| (0..w[0] * w[1]).map(|_| next(&mut seed)).collect())
+            .collect();
+        let layer_biases: Vec<Vec<f32>> = dims
+            .windows(2)
+            .map(|w| (0..w[1]).map(|_| next(&mut seed)).collect())
+            .collect();
+
+        // ---- Linear-based MLP via `Mlp::with_layers` -----------------
+        let linears: Vec<Linear> = (0..dims.len() - 1)
+            .map(|i| {
+                Linear::with_weights(
+                    dims[i],
+                    dims[i + 1],
+                    layer_weights[i].clone(),
+                    layer_biases[i].clone(),
+                    acts[i].clone(),
+                )
+            })
+            .collect();
+        let mlp = Mlp::with_layers(linears);
+
+        // ---- Inputs (two independent Node sets) ----------------------
+        let x_vals: Vec<f32> = (0..dims[0]).map(|_| next(&mut seed)).collect();
+        let inputs_linear: Vec<Node> = x_vals.iter().map(|&v| Node::from(v)).collect();
+        let inputs_legacy: Vec<Node> = x_vals.iter().map(|&v| Node::from(v)).collect();
+
+        // ---- Forward through the Linear-based MLP --------------------
+        let outs_linear = mlp.forward(&inputs_linear);
+
+        // ---- Forward through the legacy scalar pipeline (and capture
+        // the weight/bias Nodes per layer so we can read their gradients
+        // after backward) -----------------------------------------------
+        let mut current_legacy = inputs_legacy.clone();
+        let mut legacy_weight_nodes: Vec<Vec<Node>> = Vec::with_capacity(dims.len() - 1);
+        let mut legacy_bias_nodes: Vec<Vec<Node>> = Vec::with_capacity(dims.len() - 1);
+        for layer_idx in 0..dims.len() - 1 {
+            let (outs, w_nodes, b_nodes) = legacy_layer_forward_with_params(
+                &layer_weights[layer_idx],
+                &layer_biases[layer_idx],
+                &current_legacy,
+                &acts[layer_idx],
+                dims[layer_idx],
+                dims[layer_idx + 1],
+            );
+            current_legacy = outs;
+            legacy_weight_nodes.push(w_nodes);
+            legacy_bias_nodes.push(b_nodes);
+        }
+        let outs_legacy = current_legacy;
+
+        // ---- Forward agreement ---------------------------------------
+        assert_eq!(outs_linear.len(), outs_legacy.len());
+        for i in 0..outs_linear.len() {
+            assert!(
+                close(outs_linear[i].get_value(), outs_legacy[i].get_value(), TOL),
+                "output {} differs: linear={}, legacy={}",
+                i,
+                outs_linear[i].get_value(),
+                outs_legacy[i].get_value()
+            );
+        }
+
+        // ---- Backward through both, on `loss = sum(y)` ---------------
+        let mut loss_linear = outs_linear[0].clone();
+        for o in outs_linear.iter().skip(1) {
+            loss_linear = loss_linear + o.clone();
+        }
+        loss_linear.backward();
+
+        let mut loss_legacy = outs_legacy[0].clone();
+        for o in outs_legacy.iter().skip(1) {
+            loss_legacy = loss_legacy + o.clone();
+        }
+        loss_legacy.backward();
+
+        // ---- Parameter-gradient agreement (per layer) ----------------
+        for layer_idx in 0..dims.len() - 1 {
+            let in_dim = dims[layer_idx];
+            let out_dim = dims[layer_idx + 1];
+
+            let dw_linear = mlp.layer(layer_idx).tape().d_weights_ref().clone();
+            let db_linear = mlp.layer(layer_idx).tape().d_bias_ref().clone();
+
+            for i in 0..out_dim {
+                for j in 0..in_dim {
+                    let g_linear = dw_linear[i * in_dim + j];
+                    let g_legacy = legacy_weight_nodes[layer_idx][i * in_dim + j].get_gradient();
+                    assert!(
+                        close(g_linear, g_legacy, TOL),
+                        "layer {} dW[{}, {}] differs: linear={}, legacy={}",
+                        layer_idx,
+                        i,
+                        j,
+                        g_linear,
+                        g_legacy
+                    );
+                }
+                let g_linear_b = db_linear[i];
+                let g_legacy_b = legacy_bias_nodes[layer_idx][i].get_gradient();
+                assert!(
+                    close(g_linear_b, g_legacy_b, TOL),
+                    "layer {} db[{}] differs: linear={}, legacy={}",
+                    layer_idx,
+                    i,
+                    g_linear_b,
+                    g_legacy_b
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_mlp_dx_propagates_to_non_leaf_inputs() {
+        // Companion to `test_mlp_matches_legacy_scalar_path`: explicitly
+        // exercise the `dx = Wᵀ d_out` upstream-propagation path inside
+        // `MatMulTape::run_backward`.  When the inputs to the first Linear
+        // are non-leaves (here: `x + 0`), the tape stores them as
+        // `upstream` and writes their gradients via `add_gradient` —
+        // which must match the legacy scalar chain-rule result within
+        // the same f32 tolerance as the parameter-gradient test.
+        const TOL: f32 = 1e-4;
+
+        let mut seed: u32 = 0xCAFEF00D;
+        let mut next = |s: &mut u32| -> f32 {
+            *s = s.wrapping_mul(1103515245).wrapping_add(12345);
+            ((*s >> 8) as f32 / ((1u32 << 23) as f32)) - 1.0
+        };
+
+        let dims = [4usize, 5, 2];
+        let acts = [Activations::Tanh, Activations::None];
+
+        let layer_weights: Vec<Vec<f32>> = dims
+            .windows(2)
+            .map(|w| (0..w[0] * w[1]).map(|_| next(&mut seed)).collect())
+            .collect();
+        let layer_biases: Vec<Vec<f32>> = dims
+            .windows(2)
+            .map(|w| (0..w[1]).map(|_| next(&mut seed)).collect())
+            .collect();
+
+        let linears: Vec<Linear> = (0..dims.len() - 1)
+            .map(|i| {
+                Linear::with_weights(
+                    dims[i],
+                    dims[i + 1],
+                    layer_weights[i].clone(),
+                    layer_biases[i].clone(),
+                    acts[i].clone(),
+                )
+            })
+            .collect();
+        let mlp = Mlp::with_layers(linears);
+
+        let x_vals: Vec<f32> = (0..dims[0]).map(|_| next(&mut seed)).collect();
+
+        // Wrap each input in `+ Node::from(0.0)` so the resulting Node has
+        // `Operation::Add` — non-leaf — which switches `MatMulTape::forward`
+        // into the path that snapshots `upstream` and runs `dx = Wᵀ d_out`
+        // on backward.  We keep `roots_*` aside so we can read each leaf's
+        // gradient after backward and compare across paths.
+        let roots_linear: Vec<Node> = x_vals.iter().map(|&v| Node::from(v)).collect();
+        let inputs_linear: Vec<Node> = roots_linear
+            .iter()
+            .map(|n| n.clone() + Node::from(0.0))
+            .collect();
+
+        let roots_legacy: Vec<Node> = x_vals.iter().map(|&v| Node::from(v)).collect();
+        let inputs_legacy: Vec<Node> = roots_legacy
+            .iter()
+            .map(|n| n.clone() + Node::from(0.0))
+            .collect();
+
+        // Forward through both paths.
+        let outs_linear = mlp.forward(&inputs_linear);
+
+        let mut current_legacy = inputs_legacy;
+        for layer_idx in 0..dims.len() - 1 {
+            let (outs, _w, _b) = legacy_layer_forward_with_params(
+                &layer_weights[layer_idx],
+                &layer_biases[layer_idx],
+                &current_legacy,
+                &acts[layer_idx],
+                dims[layer_idx],
+                dims[layer_idx + 1],
+            );
+            current_legacy = outs;
+        }
+        let outs_legacy = current_legacy;
+
+        // Backward on `loss = sum(y)`.
+        let mut loss_linear = outs_linear[0].clone();
+        for o in outs_linear.iter().skip(1) {
+            loss_linear = loss_linear + o.clone();
+        }
+        loss_linear.backward();
+
+        let mut loss_legacy = outs_legacy[0].clone();
+        for o in outs_legacy.iter().skip(1) {
+            loss_legacy = loss_legacy + o.clone();
+        }
+        loss_legacy.backward();
+
+        // Input-leaf gradient agreement — exercises the dx propagation
+        // path that pure-leaf inputs would have skipped.
+        for j in 0..dims[0] {
+            let g_linear = roots_linear[j].get_gradient();
+            let g_legacy = roots_legacy[j].get_gradient();
+            assert!(
+                close(g_linear, g_legacy, TOL),
+                "input root grad {} differs: linear={}, legacy={}",
+                j,
+                g_linear,
+                g_legacy
+            );
+            // Also sanity-check that dx actually fired (non-zero gradient).
+            assert!(
+                g_linear.abs() > 1e-6,
+                "expected non-zero input grad at {}; got {}",
+                j,
+                g_linear
+            );
+        }
+    }
+
+    #[test]
+    fn test_mlp_with_layers_chains_correctly() {
+        let l0 = Linear::new(3, 4, Activations::Tanh);
+        let l1 = Linear::new(4, 2, Activations::None);
+        let mlp = Mlp::with_layers(vec![l0, l1]);
+        assert_eq!(mlp.get_architecture(), &[3, 4, 2]);
+        assert_eq!(mlp.num_linear_layers(), 2);
+        // Total params: 3*4+4 + 4*2+2 = 26.
+        assert_eq!(mlp.parameters().len(), 26);
+    }
+
+    #[test]
+    #[should_panic(expected = "layer dimensions do not chain")]
+    fn test_mlp_with_layers_rejects_dim_mismatch() {
+        let l0 = Linear::new(3, 4, Activations::None);
+        let l1 = Linear::new(5, 2, Activations::None); // 5 != 4
+        let _ = Mlp::with_layers(vec![l0, l1]);
+    }
+
+    #[test]
+    fn test_parameters_for_layers_partial_slice() {
+        // Phase 11 fine-tune target: pull just one layer's parameters.
+        let mlp = Mlp::new(
+            &[2, 4, 3, 1],
+            &[Activations::ReLU, Activations::ReLU, Activations::None],
+        );
+        let last_layer_params = mlp.parameters_for_layers(2..3);
+        // Last Linear is 3 -> 1, so 3*1 + 1 = 4 parameters.
+        assert_eq!(last_layer_params.len(), 4);
+        // Check the same params would also be returned by mlp.layer(2).parameters().
+        let direct = mlp.layer(2).parameters();
+        assert_eq!(direct.len(), 4);
+        for (a, b) in last_layer_params.iter().zip(direct.iter()) {
+            assert_eq!(a, b);
+        }
     }
 
     #[test]
