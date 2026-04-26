@@ -36,6 +36,75 @@ use std::rc::Rc;
 use crate::engine::ops::Operation;
 use crate::engine::value::Node;
 
+/// Which buffer in a [`MatMulTape`] a [`ParamView`] points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ParamKind {
+    Weight,
+    Bias,
+}
+
+/// Read-through / write-through view of one scalar parameter living inside a
+/// [`MatMulTape`].  Used by `nn::Linear` to expose its flat `Vec<f32>` weight
+/// and bias buffers as a `Vec<Node>` so existing optimizers (`Sgd`, `MeProp`)
+/// keep working unchanged.
+///
+/// A `ParamView` is paired with the [`Node::Param`] storage variant; calls to
+/// `Node::get_value`, `set_value`, `get_gradient`, and `add_gradient` route
+/// straight into `tape.weights[index]` / `tape.bias[index]` (or the matching
+/// gradient buffer) via `RefCell::borrow{,_mut}`.  The fused matmul kernel
+/// `matrixmultiply::sgemm` (Phase 4) requires a contiguous `&[f32]`, which is
+/// why parameters live in the tape's flat buffer rather than as one
+/// `Rc<RefCell<f32>>` per scalar.
+#[derive(Debug, Clone)]
+pub struct ParamView {
+    pub tape: Rc<MatMulTape>,
+    pub kind: ParamKind,
+    pub index: usize,
+}
+
+impl ParamView {
+    pub fn get_value(&self) -> f32 {
+        match self.kind {
+            ParamKind::Weight => self.tape.weights.borrow()[self.index],
+            ParamKind::Bias => self.tape.bias.borrow()[self.index],
+        }
+    }
+
+    pub fn set_value(&self, value: f32) {
+        match self.kind {
+            ParamKind::Weight => self.tape.weights.borrow_mut()[self.index] = value,
+            ParamKind::Bias => self.tape.bias.borrow_mut()[self.index] = value,
+        }
+    }
+
+    pub fn get_gradient(&self) -> f32 {
+        match self.kind {
+            ParamKind::Weight => self.tape.d_weights.borrow()[self.index],
+            ParamKind::Bias => self.tape.d_bias.borrow()[self.index],
+        }
+    }
+
+    pub fn set_gradient(&self, gradient: f32) {
+        match self.kind {
+            ParamKind::Weight => self.tape.d_weights.borrow_mut()[self.index] = gradient,
+            ParamKind::Bias => self.tape.d_bias.borrow_mut()[self.index] = gradient,
+        }
+    }
+
+    pub fn add_gradient(&self, gradient: f32) {
+        match self.kind {
+            ParamKind::Weight => self.tape.d_weights.borrow_mut()[self.index] += gradient,
+            ParamKind::Bias => self.tape.d_bias.borrow_mut()[self.index] += gradient,
+        }
+    }
+
+    /// Stable identity used by [`Node`]'s `Hash`/`Eq` impls and by
+    /// optimizers' tape-deduplication logic.
+    pub fn tape_ptr(&self) -> *const MatMulTape {
+        Rc::as_ptr(&self.tape)
+    }
+}
+
 /// Side struct shared by every output `Node` of one fused matmul op.
 ///
 /// All parameter and per-iteration state lives here so the per-`Node` payload

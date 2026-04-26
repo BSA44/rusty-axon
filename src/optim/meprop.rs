@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::engine::value::Node;
 use crate::optim::optimizer::Optimizer;
 
@@ -44,8 +46,17 @@ impl Optimizer for MeProp {
     }
 
     fn zero_state(&mut self) {
-        for param in self.parameters.iter_mut() {
-            param.zero_gradient();
+        // See `Sgd::zero_state` for the dedup-by-tape rationale.
+        let mut seen_tapes: HashSet<usize> = HashSet::new();
+        for param in self.parameters.iter() {
+            match param.param_tape_ptr() {
+                Some(ptr) => {
+                    if seen_tapes.insert(ptr as usize) {
+                        param.reset_param_tape();
+                    }
+                }
+                None => param.zero_gradient(),
+            }
         }
     }
 }

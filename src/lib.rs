@@ -29,6 +29,8 @@ pub use nn::activations::Activations;
 #[cfg(feature = "train")]
 pub use nn::layer::Layer;
 #[cfg(feature = "train")]
+pub use nn::linear::Linear;
+#[cfg(feature = "train")]
 pub use nn::mlp::Mlp;
 #[cfg(feature = "train")]
 pub use nn::neuron::Neuron;

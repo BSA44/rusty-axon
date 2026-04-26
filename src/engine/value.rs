@@ -1,5 +1,6 @@
 //! Scalar value node that participates in automatic differentiation.
 //use std::collections::HashSet;
+use crate::engine::matmul::{MatMulTape, ParamView};
 use crate::engine::ops::Operation;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -41,10 +42,24 @@ macro_rules! impl_ops_for_scalar {
     };
 }
 
+/// Internal storage strategy for a [`Node`].
+///
+/// Phase 2 introduced the `Param` variant so a `Linear` layer's weights and
+/// biases can live as a single contiguous `Vec<f32>` inside its
+/// [`MatMulTape`] (required by `matrixmultiply::sgemm`) while still being
+/// surfaced to optimizers as `Vec<Node>`.  Owned scalar Nodes — produced by
+/// every non-`MatMul` operation — keep the original `Rc<RefCell<Value>>`
+/// representation.
+#[derive(Debug, Clone)]
+enum NodeStorage {
+    Owned(Rc<RefCell<Value>>),
+    Param(ParamView),
+}
+
 //the actual reference everyone should work with
 #[derive(Debug, Clone)]
 pub struct Node {
-    value: Rc<RefCell<Value>>,
+    storage: NodeStorage,
 }
 
 impl Node {
@@ -57,37 +72,87 @@ impl Node {
     /// `Operation::MatMul`-tagged outputs.
     pub(crate) fn with_operation(value: f32, operation: Operation) -> Self {
         Self {
-            value: Rc::new(RefCell::new(Value::new(value, operation))),
+            storage: NodeStorage::Owned(Rc::new(RefCell::new(Value::new(value, operation)))),
+        }
+    }
+
+    /// Construct a `Node` that views into a `MatMulTape`'s parameter buffer.
+    /// All reads/writes of value and gradient route through the tape; the
+    /// node reports `Operation::None` because it is a leaf.
+    pub fn from_param_view(view: ParamView) -> Self {
+        Self {
+            storage: NodeStorage::Param(view),
         }
     }
 
     pub fn set_value(&mut self, value: f32) {
-        self.value.borrow_mut().set_value(value);
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow_mut().set_value(value),
+            NodeStorage::Param(view) => view.set_value(value),
+        }
     }
 
     // to get the value of the node
     pub fn get_value(&self) -> f32 {
-        self.value.borrow().get_value()
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow().get_value(),
+            NodeStorage::Param(view) => view.get_value(),
+        }
     }
 
     pub fn get_gradient(&self) -> f32 {
-        self.value.borrow().get_gradient()
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow().get_gradient(),
+            NodeStorage::Param(view) => view.get_gradient(),
+        }
     }
 
     pub fn set_gradient(&mut self, gradient: f32) {
-        self.value.borrow_mut().set_gradient(gradient);
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow_mut().set_gradient(gradient),
+            NodeStorage::Param(view) => view.set_gradient(gradient),
+        }
     }
 
     pub fn add_gradient(&self, gradient: f32) {
-        self.value.borrow_mut().gradient += gradient;
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow_mut().gradient += gradient,
+            NodeStorage::Param(view) => view.add_gradient(gradient),
+        }
     }
 
     pub fn zero_gradient(&self) {
-        self.value.borrow_mut().set_gradient(0.0);
+        match &self.storage {
+            NodeStorage::Owned(v) => v.borrow_mut().set_gradient(0.0),
+            NodeStorage::Param(view) => view.set_gradient(0.0),
+        }
     }
 
     pub fn get_operation(&self) -> Operation {
-        self.value.borrow().get_operation()
+        match &self.storage {
+            // Param leaves never have an upstream operation.
+            NodeStorage::Owned(v) => v.borrow().get_operation(),
+            NodeStorage::Param(_) => Operation::None,
+        }
+    }
+
+    /// If this Node is a `Param` view into a `MatMulTape`, return the tape's
+    /// raw pointer (used by optimizers to deduplicate `reset_grads()` calls
+    /// across many parameter Nodes that share one tape).
+    pub fn param_tape_ptr(&self) -> Option<*const MatMulTape> {
+        match &self.storage {
+            NodeStorage::Param(view) => Some(view.tape_ptr()),
+            NodeStorage::Owned(_) => None,
+        }
+    }
+
+    /// Reset all accumulated gradient state on the underlying `MatMulTape`,
+    /// if this Node is a `Param` view.  No-op for `Owned` Nodes.  Intended
+    /// for optimizers that have already deduplicated by `param_tape_ptr`.
+    pub fn reset_param_tape(&self) {
+        if let NodeStorage::Param(view) = &self.storage {
+            view.tape.reset_grads();
+        }
     }
 
     fn build_topo(&self) -> Vec<Node> {
@@ -162,18 +227,19 @@ impl Node {
         self.set_gradient(1.0);
         let topo = self.build_topo();
         for node in topo.iter().rev() {
-            let node_borrow = node.value.borrow();
-            //out gradient
-            let grad = node_borrow.get_gradient();
+            // Read the gradient and operation through Node accessors so the
+            // logic is identical for `Owned` and `Param` storage.  Each
+            // accessor takes and releases its own RefCell borrow, avoiding
+            // any cross-arm borrow-juggling.
+            let grad = node.get_gradient();
+            let operation = node.get_operation();
 
-            match &node_borrow.get_operation() {
+            match operation {
                 Operation::Add { left, right } => {
-                    drop(node_borrow);
                     left.add_gradient(grad);
                     right.add_gradient(grad);
                 }
                 Operation::Div { dividend, divisor } => {
-                    drop(node_borrow);
                     dividend.add_gradient(grad * (1.0 / divisor.get_value()));
                     divisor.add_gradient(
                         -(grad)
@@ -181,7 +247,6 @@ impl Node {
                     );
                 }
                 Operation::Mul { left, right } => {
-                    drop(node_borrow);
                     left.add_gradient(grad * right.get_value());
                     right.add_gradient(grad * left.get_value());
                 }
@@ -189,47 +254,39 @@ impl Node {
                     minuend,
                     subtrahend,
                 } => {
-                    drop(node_borrow);
                     minuend.add_gradient(grad);
                     subtrahend.add_gradient(-grad);
                 }
                 Operation::Pow { base, exponent } => {
-                    drop(node_borrow);
                     base.add_gradient(grad * exponent * base.get_value().powf(exponent - 1.0));
                 }
                 Operation::Exp { exponent } => {
-                    let exp_result = node_borrow.get_value();
-                    drop(node_borrow);
+                    // The forward value of an exp Node is exp(input), which is
+                    // also d/dx exp(x).  Read it through the public accessor.
+                    let exp_result = node.get_value();
                     exponent.add_gradient(grad * exp_result);
                 }
                 Operation::Neg { operand } => {
-                    drop(node_borrow);
                     operand.add_gradient(-grad);
                 }
                 Operation::Log { base, operand } => {
-                    drop(node_borrow);
                     operand.add_gradient(grad / (operand.get_value() * base.ln()));
                 }
                 Operation::ReLU { input } => {
-                    drop(node_borrow);
-                    // ReLU gradient: 1 if input > 0, else 0
                     if input.get_value() > 0.0 {
                         input.add_gradient(grad);
                     }
                     // else gradient is 0, so we don't add anything
                 }
                 Operation::MatMul { tape, output_index } => {
-                    drop(node_borrow);
-                    tape.d_out.borrow_mut()[*output_index] += grad;
+                    tape.d_out.borrow_mut()[output_index] += grad;
                     let new_count = tape.visit_count.get() + 1;
                     tape.visit_count.set(new_count);
                     if new_count == tape.out_dim && !tape.backward_done.get() {
                         tape.run_backward();
                     }
                 }
-                Operation::None => {
-                    drop(node_borrow);
-                }
+                Operation::None => {}
             }
         }
 
@@ -281,9 +338,25 @@ impl Node {
         )
     }
 
-    /// Get unique identifier for this node based on its memory address
+    /// Get unique identifier for this node based on its memory address.
+    /// For `Param` views, the id encodes the tape pointer plus the kind/index
+    /// so visualizations distinguish each individual parameter.
     fn node_id(&self) -> String {
-        format!("n{:x}", Rc::as_ptr(&self.value) as usize)
+        match &self.storage {
+            NodeStorage::Owned(v) => format!("n{:x}", Rc::as_ptr(v) as usize),
+            NodeStorage::Param(view) => {
+                let kind_tag = match view.kind {
+                    crate::engine::matmul::ParamKind::Weight => 'w',
+                    crate::engine::matmul::ParamKind::Bias => 'b',
+                };
+                format!(
+                    "p{:x}_{}{}",
+                    view.tape_ptr() as usize,
+                    kind_tag,
+                    view.index
+                )
+            }
+        }
     }
 
     /// Generate a DOT graph visualization of the computation graph
@@ -599,7 +672,17 @@ impl Node {
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.value, &other.value)
+        match (&self.storage, &other.storage) {
+            (NodeStorage::Owned(a), NodeStorage::Owned(b)) => Rc::ptr_eq(a, b),
+            // Two Param views are the same Node iff they target the same
+            // (tape, kind, index) — multiple `Linear::parameters()` calls
+            // mint fresh wrapper Nodes that must compare equal so the topo
+            // HashSet dedupes them correctly.
+            (NodeStorage::Param(a), NodeStorage::Param(b)) => {
+                a.tape_ptr() == b.tape_ptr() && a.kind == b.kind && a.index == b.index
+            }
+            _ => false,
+        }
     }
 }
 
@@ -607,8 +690,18 @@ impl Eq for Node {}
 
 impl Hash for Node {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        //hash based on the address of the value
-        Rc::as_ptr(&self.value).hash(state);
+        match &self.storage {
+            NodeStorage::Owned(v) => {
+                0u8.hash(state);
+                Rc::as_ptr(v).hash(state);
+            }
+            NodeStorage::Param(view) => {
+                1u8.hash(state);
+                view.tape_ptr().hash(state);
+                view.kind.hash(state);
+                view.index.hash(state);
+            }
+        }
     }
 }
 

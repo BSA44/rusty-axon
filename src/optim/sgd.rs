@@ -1,5 +1,7 @@
 //! Stochastic gradient descent optimizer placeholder.
 
+use std::collections::HashSet;
+
 use crate::engine::value::Node;
 
 use crate::optim::optimizer::Optimizer;
@@ -27,10 +29,23 @@ impl Optimizer for Sgd {
         }
     }
 
-    /// Reset optimizer state (e.g., momentum buffers).
+    /// Reset gradients in preparation for a new backward pass.
+    ///
+    /// `Param`-view Nodes route their gradient into a `MatMulTape`'s flat
+    /// buffers; resetting them one Node at a time would call `reset_grads()`
+    /// `in_dim*out_dim + out_dim` times per layer.  Dedup by tape pointer so
+    /// each tape is reset exactly once; `Owned` Nodes are zeroed directly.
     fn zero_state(&mut self) {
-        for param in self.parameters.iter_mut() {
-            param.zero_gradient();
+        let mut seen_tapes: HashSet<usize> = HashSet::new();
+        for param in self.parameters.iter() {
+            match param.param_tape_ptr() {
+                Some(ptr) => {
+                    if seen_tapes.insert(ptr as usize) {
+                        param.reset_param_tape();
+                    }
+                }
+                None => param.zero_gradient(),
+            }
         }
     }
 }
