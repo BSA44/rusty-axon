@@ -52,7 +52,10 @@ impl Node {
         Self::with_operation(value, Operation::None)
     }
 
-    fn with_operation(value: f32, operation: Operation) -> Self {
+    /// Build a `Node` carrying a specific upstream operation.  Exposed to the
+    /// rest of the engine so that the fused matmul tape can mint
+    /// `Operation::MatMul`-tagged outputs.
+    pub(crate) fn with_operation(value: f32, operation: Operation) -> Self {
         Self {
             value: Rc::new(RefCell::new(Value::new(value, operation))),
         }
@@ -132,6 +135,24 @@ impl Node {
             Operation::ReLU { input } => {
                 input.build_topo_recursive(topo, visited);
             }
+            Operation::MatMul {
+                tape,
+                output_index: _,
+            } => {
+                // All `out_dim` outputs of a single matmul share one tape.
+                // Without this guard `build_topo_recursive` would walk the
+                // upstream Vec once per output (out_dim redundant traversals).
+                // The flag is cleared in `backward` once the topo has been
+                // consumed.
+                if !tape.topo_walked.get() {
+                    tape.topo_walked.set(true);
+                    if let Some(upstream) = tape.upstream.borrow().as_ref() {
+                        for u in upstream.iter() {
+                            u.build_topo_recursive(topo, visited);
+                        }
+                    }
+                }
+            }
             Operation::None => {}
         }
         topo.push(self.clone());
@@ -197,9 +218,26 @@ impl Node {
                     }
                     // else gradient is 0, so we don't add anything
                 }
+                Operation::MatMul { tape, output_index } => {
+                    drop(node_borrow);
+                    tape.d_out.borrow_mut()[*output_index] += grad;
+                    let new_count = tape.visit_count.get() + 1;
+                    tape.visit_count.set(new_count);
+                    if new_count == tape.out_dim && !tape.backward_done.get() {
+                        tape.run_backward();
+                    }
+                }
                 Operation::None => {
                     drop(node_borrow);
                 }
+            }
+        }
+
+        // Reset the per-tape `topo_walked` flag for every matmul tape we
+        // visited so the next `backward()` call walks `upstream` again.
+        for node in topo.iter() {
+            if let Operation::MatMul { tape, .. } = node.get_operation() {
+                tape.topo_walked.set(false);
             }
         }
     }
@@ -419,6 +457,32 @@ impl Node {
 
                 dot.push_str(&format!("    {} -> {};\n", input.node_id(), op_id));
                 dot.push_str(&format!("    {} -> {};\n", op_id, id));
+            }
+            Operation::MatMul {
+                tape,
+                output_index,
+            } => {
+                // The fused matmul block is rendered as a single rectangle
+                // shared by every output Node.  The DOT id of that rectangle
+                // is keyed off the tape's heap address so all outputs of one
+                // matmul connect to the same "MatMul" cluster.
+                let op_id = format!("mm{:x}", Rc::as_ptr(&tape) as usize);
+                dot.push_str(&format!(
+                    "    {} [label=\"MatMul\\n[{}, {}]\" shape=box3d fillcolor=lightskyblue];\n",
+                    op_id, tape.out_dim, tape.in_dim
+                ));
+
+                if let Some(upstream) = tape.upstream.borrow().as_ref() {
+                    for u in upstream.iter() {
+                        u.build_dot_recursive(dot, visited);
+                        dot.push_str(&format!("    {} -> {};\n", u.node_id(), op_id));
+                    }
+                }
+
+                dot.push_str(&format!(
+                    "    {} -> {} [label=\"out[{}]\"];\n",
+                    op_id, id, output_index
+                ));
             }
             Operation::None => {
                 // Leaf node - already added above

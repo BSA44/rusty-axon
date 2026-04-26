@@ -3,7 +3,6 @@
 //! This example shows how to visualize neural network architectures
 //! with a layer-oriented view (not the detailed computation graph).
 
-use rusty_axon::engine::Node;
 use rusty_axon::Activations;
 use rusty_axon::Mlp;
 

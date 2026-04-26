@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::engine::ops::Operation;
     use crate::engine::value::Node;
 
     // Engine is f32 end-to-end after Phase 0.5; ~1e-5 is the practical
@@ -456,6 +457,264 @@ mod tests {
             std::mem::size_of::<Value>() < std::mem::size_of::<(f64, f64)>()
                 + std::mem::size_of::<crate::engine::ops::Operation>(),
             "Value should be smaller than the f64 layout would have been"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 1 — fused MatMul op + MatMulTape
+    // ---------------------------------------------------------------------
+
+    /// Reference scalar matmul, for cross-checking the fused tape.
+    fn naive_matvec(weights: &[f32], bias: &[f32], input: &[f32], out_dim: usize) -> Vec<f32> {
+        let in_dim = input.len();
+        (0..out_dim)
+            .map(|i| {
+                let row = i * in_dim;
+                let dot: f32 = (0..in_dim).map(|j| weights[row + j] * input[j]).sum();
+                bias[i] + dot
+            })
+            .collect()
+    }
+
+    fn linear_congruential(seed: &mut u32) -> f32 {
+        // A tiny LCG so tests are deterministic without pulling rand into
+        // engine/tests.  Maps to roughly [-1.0, 1.0).
+        *seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        ((*seed >> 8) as f32 / ((1u32 << 23) as f32)) - 1.0
+    }
+
+    #[test]
+    fn test_matmul_forward_simple() {
+        // 2x3 weights, identity check on the forward kernel.
+        use crate::engine::matmul::MatMulTape;
+
+        let weights = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // [2, 3] row-major
+        let bias = vec![0.5, -0.5];
+        let tape = MatMulTape::new(3, 2, weights.clone(), bias.clone());
+
+        let input_nodes: Vec<Node> = vec![Node::from(1.0), Node::from(2.0), Node::from(3.0)];
+        let outputs = tape.forward(&input_nodes);
+
+        assert_eq!(outputs.len(), 2);
+        // y[0] = 1*1 + 2*2 + 3*3 + 0.5 = 14.5
+        // y[1] = 4*1 + 5*2 + 6*3 - 0.5 = 31.5
+        assert_close(outputs[0].get_value(), 14.5, "y[0]");
+        assert_close(outputs[1].get_value(), 31.5, "y[1]");
+    }
+
+    #[test]
+    fn test_matmul_backward_leaves_8x4() {
+        // 8x4 weight, [4] input that are pure leaves.  Compare gradients
+        // against a hand-computed reference.
+        use crate::engine::matmul::MatMulTape;
+
+        let mut seed = 0xC0FFEE_u32;
+        let in_dim = 4;
+        let out_dim = 8;
+        let weights: Vec<f32> = (0..out_dim * in_dim)
+            .map(|_| linear_congruential(&mut seed))
+            .collect();
+        let bias: Vec<f32> = (0..out_dim)
+            .map(|_| linear_congruential(&mut seed))
+            .collect();
+        let input_vals: Vec<f32> = (0..in_dim)
+            .map(|_| linear_congruential(&mut seed))
+            .collect();
+
+        let tape = MatMulTape::new(in_dim, out_dim, weights.clone(), bias.clone());
+        let inputs: Vec<Node> = input_vals.iter().map(|&v| Node::from(v)).collect();
+        let outputs = tape.forward(&inputs);
+
+        // Forward sanity.
+        let expected_y = naive_matvec(&weights, &bias, &input_vals, out_dim);
+        for i in 0..out_dim {
+            assert_close(outputs[i].get_value(), expected_y[i], &format!("y[{}]", i));
+        }
+
+        // Use loss = sum(y) so dL/dy[i] = 1.  Then dL/dW[i,j] = x[j],
+        // dL/db[i] = 1, dL/dx[j] = sum_i W[i,j].
+        let mut loss = outputs[0].clone();
+        for o in outputs.iter().skip(1) {
+            loss = loss + o.clone();
+        }
+        loss.backward();
+
+        let dw = tape.d_weights_ref();
+        let db = tape.d_bias_ref();
+        for i in 0..out_dim {
+            for j in 0..in_dim {
+                assert_close(
+                    dw[i * in_dim + j],
+                    input_vals[j],
+                    &format!("dW[{},{}]", i, j),
+                );
+            }
+            assert_close(db[i], 1.0, &format!("db[{}]", i));
+        }
+
+        // Inputs are leaves, so no upstream propagation is performed and the
+        // input Nodes' gradients should remain zero.
+        for (j, n) in inputs.iter().enumerate() {
+            assert_close(n.get_gradient(), 0.0, &format!("leaf x[{}] grad", j));
+        }
+    }
+
+    #[test]
+    fn test_matmul_backward_chained_inputs() {
+        // The matmul's input vector is *itself* produced by a small upstream
+        // graph: x[j] = (a + b) * c  for distinct (a, b, c) per j.  Verifies
+        // that `dx = Wᵀ d_out` is propagated into the upstream Nodes and that
+        // the topo walk orders them correctly.
+        use crate::engine::matmul::MatMulTape;
+
+        let mut seed = 0xBADBEEF_u32;
+        let in_dim = 3;
+        let out_dim = 4;
+        let weights: Vec<f32> = (0..out_dim * in_dim)
+            .map(|_| linear_congruential(&mut seed))
+            .collect();
+        let bias: Vec<f32> = (0..out_dim)
+            .map(|_| linear_congruential(&mut seed))
+            .collect();
+        let tape = MatMulTape::new(in_dim, out_dim, weights.clone(), bias.clone());
+
+        // Build chained upstream Nodes.
+        let a: Vec<Node> = (0..in_dim).map(|i| Node::from(0.5 + i as f32)).collect();
+        let b: Vec<Node> = (0..in_dim).map(|i| Node::from(-0.25 + i as f32)).collect();
+        let c: Vec<Node> = (0..in_dim).map(|i| Node::from(2.0 - 0.3 * i as f32)).collect();
+        let x: Vec<Node> = (0..in_dim)
+            .map(|i| (a[i].clone() + b[i].clone()) * c[i].clone())
+            .collect();
+        let x_vals: Vec<f32> = x.iter().map(|n| n.get_value()).collect();
+
+        let outputs = tape.forward(&x);
+
+        // loss = sum(y), so dL/dy[i] = 1, dL/dx[j] = sum_i W[i,j].
+        let mut loss = outputs[0].clone();
+        for o in outputs.iter().skip(1) {
+            loss = loss + o.clone();
+        }
+        loss.backward();
+
+        // Reference dx[j] = sum_i W[i, j].
+        let dx_ref: Vec<f32> = (0..in_dim)
+            .map(|j| (0..out_dim).map(|i| weights[i * in_dim + j]).sum::<f32>())
+            .collect();
+
+        // d_input scratch matches dx_ref.
+        let d_input = tape.d_input_ref();
+        for j in 0..in_dim {
+            assert_close(d_input[j], dx_ref[j], &format!("d_input[{}]", j));
+        }
+
+        // dx propagates into a[j], b[j], c[j] via the upstream chain.
+        // x[j] = (a[j] + b[j]) * c[j]  =>  dL/da[j] = dx[j] * c[j],
+        // dL/db[j] = dx[j] * c[j], dL/dc[j] = dx[j] * (a[j] + b[j]).
+        for j in 0..in_dim {
+            let cv = c[j].get_value();
+            let ab = a[j].get_value() + b[j].get_value();
+            assert_close(a[j].get_gradient(), dx_ref[j] * cv, &format!("dL/da[{}]", j));
+            assert_close(b[j].get_gradient(), dx_ref[j] * cv, &format!("dL/db[{}]", j));
+            assert_close(c[j].get_gradient(), dx_ref[j] * ab, &format!("dL/dc[{}]", j));
+        }
+
+        // Forward kernel correctness.
+        let expected_y = naive_matvec(&weights, &bias, &x_vals, out_dim);
+        for i in 0..out_dim {
+            assert_close(outputs[i].get_value(), expected_y[i], &format!("y[{}]", i));
+        }
+    }
+
+    #[test]
+    fn test_matmul_d_weights_accumulate_across_backwards() {
+        // d_weights should accumulate across multiple backward passes until
+        // an explicit `reset_grads()` call.  This is the contract Phase 2's
+        // optimizer relies on for mini-batch gradient accumulation.
+        use crate::engine::matmul::MatMulTape;
+
+        let weights = vec![0.5, -0.5, 1.0, 2.0]; // [2, 2]
+        let bias = vec![0.0, 0.0];
+        let tape = MatMulTape::new(2, 2, weights.clone(), bias.clone());
+
+        for _ in 0..3 {
+            let inputs = vec![Node::from(1.0), Node::from(1.0)];
+            let outs = tape.forward(&inputs);
+            let mut loss = outs[0].clone() + outs[1].clone();
+            loss.backward();
+        }
+
+        // After 3 backwards on `loss = y0 + y1` with x = [1, 1]:
+        //   dW[i, j] = 3 * x[j] = 3
+        //   db[i] = 3
+        let dw = tape.d_weights_ref();
+        let db = tape.d_bias_ref();
+        for v in dw.iter() {
+            assert_close(*v, 3.0, "accumulated dW");
+        }
+        for v in db.iter() {
+            assert_close(*v, 3.0, "accumulated db");
+        }
+
+        drop(dw);
+        drop(db);
+        tape.reset_grads();
+        assert!(tape.d_weights_ref().iter().all(|&v| v == 0.0));
+        assert!(tape.d_bias_ref().iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn test_matmul_visit_count_resets_between_backwards() {
+        // Two consecutive backwards on two separate forwards must each fire
+        // `run_backward` exactly once, not piggy-back on the prior pass'
+        // visit_count.
+        use crate::engine::matmul::MatMulTape;
+
+        let tape = MatMulTape::new(1, 2, vec![1.0, 2.0], vec![0.0, 0.0]);
+
+        for _ in 0..2 {
+            let inputs = vec![Node::from(1.0)];
+            let outs = tape.forward(&inputs);
+            assert_eq!(tape.visit_count.get(), 0, "forward resets visit_count");
+            assert!(!tape.backward_done.get(), "forward resets backward_done");
+
+            let mut loss = outs[0].clone() + outs[1].clone();
+            loss.backward();
+            assert!(tape.backward_done.get(), "run_backward fired");
+            assert_eq!(tape.visit_count.get(), 2, "all outputs accumulated");
+        }
+    }
+
+    #[test]
+    fn test_matmul_topo_walked_resets_after_backward() {
+        // After `backward()` returns, `topo_walked` must be `false` so the
+        // next `backward()` call walks `upstream` correctly.
+        use crate::engine::matmul::MatMulTape;
+
+        let tape = MatMulTape::new(2, 1, vec![1.0, 1.0], vec![0.0]);
+        let a = Node::from(1.0);
+        let b = Node::from(2.0);
+        let inputs = vec![a.clone() + Node::from(0.0), b.clone() + Node::from(0.0)];
+        let outs = tape.forward(&inputs);
+
+        let mut loss = outs[0].clone();
+        loss.backward();
+        assert!(
+            !tape.topo_walked.get(),
+            "topo_walked must be cleared after backward"
+        );
+    }
+
+    #[test]
+    fn test_operation_size_regression() {
+        // Phase 1 acceptance: adding `MatMul { Rc<MatMulTape>, usize }` keeps
+        // `Operation` well under the 64-byte ceiling the plan allows.
+        // Two-Node variants (Add, Sub, Mul, Div) dominate at 16 B of payload;
+        // MatMul is 16 B too (Rc + usize).  Total with discriminant fits in
+        // ~24 B in practice.
+        assert!(
+            std::mem::size_of::<Operation>() <= 64,
+            "Operation grew past the 64-byte ceiling: {}",
+            std::mem::size_of::<Operation>()
         );
     }
 
