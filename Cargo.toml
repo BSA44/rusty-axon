@@ -120,3 +120,8 @@ required-features = ["train"]
 name = "bench_mnist_matmul"
 path = "examples/bench_mnist_matmul.rs"
 required-features = ["train"]
+
+[[example]]
+name = "min_inference"
+path = "examples/min_inference.rs"
+required-features = ["inference"]

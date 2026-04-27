@@ -251,7 +251,7 @@ mod tests {
     // Phase 2 — Linear layer + ParamView
     // -----------------------------------------------------------------
 
-    use crate::engine::matmul::ParamKind;
+    use crate::nn::matmul::ParamKind;
     use crate::nn::linear::Linear;
     use crate::optim::meprop::MeProp;
     use crate::optim::optimizer::Optimizer;
@@ -877,5 +877,63 @@ mod tests {
         };
         let _ = fs::remove_file(&path);
         assert!(err.to_string().contains("activation count"));
+    }
+
+    // -----------------------------------------------------------------
+    // Phase 6 — pure-`&[f32]` inference path agrees with the train forward
+    // -----------------------------------------------------------------
+
+    /// `Mlp::infer` (always-on) matches `Mlp::forward` (train) within 1e-5
+    /// across every activation kind.  Same MLP, same weights, same input.
+    #[test]
+    fn mlp_infer_matches_forward_numerically() {
+        let activations = [
+            Activations::None,
+            Activations::ReLU,
+            Activations::Sigmoid,
+            Activations::Tanh,
+            Activations::Swish,
+        ];
+        for act in &activations {
+            let mlp = Mlp::new(
+                &[4, 6, 3],
+                &[act.clone(), Activations::None],
+            );
+            let raw_input = [0.4_f32, -0.7, 0.1, 0.9];
+
+            let nodes: Vec<Node> = raw_input.iter().map(|&v| Node::from(v)).collect();
+            let train_outputs = mlp.forward(&nodes);
+            let infer_outputs = mlp.infer(&raw_input);
+
+            assert_eq!(train_outputs.len(), infer_outputs.len());
+            for (t, i) in train_outputs.iter().zip(infer_outputs.iter()) {
+                assert!(
+                    close(t.get_value(), *i, 1e-5),
+                    "train={} infer={} (act={:?})",
+                    t.get_value(),
+                    i,
+                    act
+                );
+            }
+        }
+    }
+
+    /// `Mlp::infer_into` (ping-pong scratch buffers) matches `Mlp::infer`
+    /// (per-call allocation) bit-for-bit.
+    #[test]
+    fn mlp_infer_into_matches_infer() {
+        let mlp = Mlp::new(
+            &[5, 8, 4, 2],
+            &[Activations::ReLU, Activations::Tanh, Activations::None],
+        );
+        let input = [0.2_f32, -0.5, 0.8, 0.1, -0.3];
+
+        let alloc = mlp.infer(&input);
+        let mut into = vec![0.0_f32; alloc.len()];
+        mlp.infer_into(&input, &mut into);
+
+        for (a, b) in alloc.iter().zip(into.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "alloc={} into={}", a, b);
+        }
     }
 }

@@ -8,25 +8,35 @@
 //! Phase 4 `matrixmultiply::sgemm` swap is a drop-in change at the kernel
 //! call sites — and so optimizers see the parameters as `Vec<Node>` via
 //! [`ParamView`] leaves.
+//!
+//! Phase 6 carves the train-only forward (returns `Vec<Node>`) away from the
+//! always-on pure-`&[f32]` [`Linear::infer_into_f32`].  Both routes share
+//! the same `sgemm_rm` kernel; the inference path skips the `Node`-graph
+//! bookkeeping so it can ship in `--features inference` builds without the
+//! engine.
 
 use std::cell::Ref;
 use std::rc::Rc;
 
 use rand::Rng;
 
-use crate::engine::matmul::{MatMulTape, ParamKind, ParamView};
-use crate::engine::value::Node;
 use crate::nn::activations::Activations;
+use crate::nn::matmul::MatMulTape;
+#[cfg(feature = "train")]
+use crate::engine::value::Node;
+#[cfg(feature = "train")]
+use crate::nn::matmul::{ParamKind, ParamView};
 
 /// Fully-connected layer with optional element-wise activation.
 ///
 /// Layout: weights are row-major `[out_dim, in_dim]`; bias is `[out_dim]`.
-/// `cached_params` materialises one `ParamView`-backed `Node` per scalar
-/// parameter (in_dim*out_dim weights followed by out_dim biases) so
-/// `parameters()` is a cheap clone.
+/// Under `feature = "train"`, `cached_params` materialises one `ParamView`-
+/// backed `Node` per scalar parameter so `parameters()` is a cheap clone.
+/// Inference-only builds drop `cached_params` entirely.
 pub struct Linear {
     tape: Rc<MatMulTape>,
     activation: Activations,
+    #[cfg(feature = "train")]
     cached_params: Vec<Node>,
 }
 
@@ -67,24 +77,29 @@ impl Linear {
         activation: Activations,
     ) -> Self {
         let tape = MatMulTape::new(in_dim, out_dim, weights, bias);
-        let mut cached_params = Vec::with_capacity(out_dim * in_dim + out_dim);
-        for i in 0..out_dim * in_dim {
-            cached_params.push(Node::from_param_view(ParamView {
-                tape: Rc::clone(&tape),
-                kind: ParamKind::Weight,
-                index: i,
-            }));
-        }
-        for i in 0..out_dim {
-            cached_params.push(Node::from_param_view(ParamView {
-                tape: Rc::clone(&tape),
-                kind: ParamKind::Bias,
-                index: i,
-            }));
-        }
+        #[cfg(feature = "train")]
+        let cached_params = {
+            let mut params = Vec::with_capacity(out_dim * in_dim + out_dim);
+            for i in 0..out_dim * in_dim {
+                params.push(Node::from_param_view(ParamView {
+                    tape: Rc::clone(&tape),
+                    kind: ParamKind::Weight,
+                    index: i,
+                }));
+            }
+            for i in 0..out_dim {
+                params.push(Node::from_param_view(ParamView {
+                    tape: Rc::clone(&tape),
+                    kind: ParamKind::Bias,
+                    index: i,
+                }));
+            }
+            params
+        };
         Self {
             tape,
             activation,
+            #[cfg(feature = "train")]
             cached_params,
         }
     }
@@ -92,6 +107,7 @@ impl Linear {
     /// Train-path forward: returns `out_dim` activated `Node`s, each carrying
     /// `Operation::MatMul { tape, output_index }` underneath the activation
     /// chain (or directly if `activation == None`).
+    #[cfg(feature = "train")]
     pub fn forward(&self, inputs: &[Node]) -> Vec<Node> {
         let raw = self.tape.forward(inputs);
         // Activations apply scalar Node ops on top of the matmul outputs;
@@ -105,11 +121,11 @@ impl Linear {
         }
     }
 
-    /// Pure-`f32` inference path.  Always available (will be used by the
-    /// Phase 6 `inference` feature).  Computes `y = activation(W @ x + b)`
-    /// without allocating any `Node`s.  Routes through the same
-    /// `sgemm_rm` kernel as the train-mode forward (matrixmultiply on the
-    /// default build, naive fallback under `naive-matmul`).
+    /// Pure-`f32` inference path — always available, including under
+    /// `--features inference`.  Computes `y = activation(W @ x + b)` without
+    /// allocating any `Node`s.  Routes through the same `sgemm_rm` kernel as
+    /// the train-mode forward (matrixmultiply on the default build, naive
+    /// fallback under `naive-matmul`).
     ///
     /// # Panics
     ///
@@ -123,16 +139,15 @@ impl Linear {
         let bias = self.tape.bias.borrow();
         // y = b + W @ x; same shape parameters as the train-mode forward.
         output.copy_from_slice(&bias);
-        crate::engine::matmul::sgemm_rm(
+        crate::nn::matmul::sgemm_rm(
             out_dim, in_dim, 1, 1.0, &weights, in_dim, input, 1, 1.0, output, 1,
         );
-        for slot in output.iter_mut() {
-            *slot = apply_activation_f32(&self.activation, *slot);
-        }
+        self.activation.apply_f32_inplace(output);
     }
 
     /// All trainable parameters as `Node`s suitable for `Sgd::new` / `MeProp::new`.
     /// Length is `in_dim * out_dim + out_dim` (weights followed by biases).
+    #[cfg(feature = "train")]
     pub fn parameters(&self) -> Vec<Node> {
         self.cached_params.clone()
     }
@@ -163,17 +178,3 @@ impl Linear {
         &self.tape
     }
 }
-
-/// Per-element activation in pure `f32`.  Phase 6 will lift this onto
-/// `Activations` proper as `apply_f32_inplace`; for now it lives next to the
-/// only call site that needs it.
-fn apply_activation_f32(activation: &Activations, x: f32) -> f32 {
-    match activation {
-        Activations::None => x,
-        Activations::ReLU => x.max(0.0),
-        Activations::Sigmoid => 1.0 / (1.0 + (-x).exp()),
-        Activations::Tanh => x.tanh(),
-        Activations::Swish => x / (1.0 + (-x).exp()),
-    }
-}
-

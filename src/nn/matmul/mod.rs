@@ -1,13 +1,12 @@
-//! Fused matmul op for the autograd engine.
+//! Fused matmul tape — relocated from `engine::matmul` in Phase 6.
 //!
-//! A `Linear` layer in `rusty-axon` runs **one** matrix-vector product per
-//! forward pass and **two** matmuls per backward pass, but every individual
-//! parameter still appears in the scalar `Value` graph as a leaf (`Param` view
-//! in Phase 2).  To keep the per-`Node` overhead tiny we factor all of the
-//! shared state — weight matrix, bias, input snapshot, gradient buffers,
-//! upstream-Node refs, and the visit-count bookkeeping that drives the fused
-//! backward — into [`MatMulTape`].  Each output `Node` produced by a matmul
-//! carries `(Rc<MatMulTape>, output_index)` and nothing else.
+//! Phase 6 splits the framework into a `train`-only autograd path (which
+//! gates `engine`, `optim`, `loss`, and the visualization helpers) and an
+//! always-on pure-`&[f32]` inference path.  `MatMulTape` straddles both: the
+//! parameter buffers (`weights`, `bias`) are needed by the inference forward,
+//! while the gradient buffers, the input snapshot, the upstream `Node` refs,
+//! and the visit-count bookkeeping that drives the fused backward are
+//! `train`-only.
 //!
 //! The three GEMM call sites — forward `y = W @ x + b`, backward `dW = d_out
 //! @ xᵀ`, backward `dx = Wᵀ @ d_out` — go through the [`kernel::sgemm_rm`]
@@ -15,7 +14,7 @@
 //! [`kernel_mm`] (matrixmultiply, auto-NEON on aarch64) at compile time based
 //! on the `matrixmultiply` / `naive-matmul` feature flags.
 //!
-//! ## Backward dispatch
+//! ## Backward dispatch (`train` only)
 //!
 //! For a tape with `out_dim` outputs, every backward pass:
 //!
@@ -26,16 +25,15 @@
 //!    x` into `d_weights`, accumulates `db = d_out` into `d_bias`, and (if the
 //!    inputs were not leaves) propagates `dx = Wᵀ d_out` into the upstream
 //!    `Node`s via `Node::add_gradient`.
-//!
-//! This trick assumes every output `Node` is reachable from the loss so that
-//! the topo walk pulls it into the backward pass.  For the MLPs we target
-//! (softmax + cross-entropy over every logit) that is always true.  A
-//! `debug_assert!` in [`Drop`] flags the rare case where it is not.
 
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Ref, RefCell};
+#[cfg(feature = "train")]
+use std::cell::Cell;
 use std::rc::Rc;
 
+#[cfg(feature = "train")]
 use crate::engine::ops::Operation;
+#[cfg(feature = "train")]
 use crate::engine::value::Node;
 
 mod kernel;
@@ -46,6 +44,7 @@ pub(crate) mod kernel_mm;
 pub(crate) use kernel::sgemm_rm;
 
 /// Which buffer in a [`MatMulTape`] a [`ParamView`] points at.
+#[cfg(feature = "train")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamKind {
     Weight,
@@ -57,13 +56,14 @@ pub enum ParamKind {
 /// and bias buffers as a `Vec<Node>` so existing optimizers (`Sgd`, `MeProp`)
 /// keep working unchanged.
 ///
-/// A `ParamView` is paired with the [`Node::Param`] storage variant; calls to
+/// A `ParamView` is paired with the `Node::Param` storage variant; calls to
 /// `Node::get_value`, `set_value`, `get_gradient`, and `add_gradient` route
 /// straight into `tape.weights[index]` / `tape.bias[index]` (or the matching
 /// gradient buffer) via `RefCell::borrow{,_mut}`.  The fused matmul kernel
 /// `matrixmultiply::sgemm` requires a contiguous `&[f32]`, which is why
 /// parameters live in the tape's flat buffer rather than as one
 /// `Rc<RefCell<f32>>` per scalar.
+#[cfg(feature = "train")]
 #[derive(Debug, Clone)]
 pub struct ParamView {
     pub tape: Rc<MatMulTape>,
@@ -71,6 +71,7 @@ pub struct ParamView {
     pub index: usize,
 }
 
+#[cfg(feature = "train")]
 impl ParamView {
     pub fn get_value(&self) -> f32 {
         match self.kind {
@@ -107,7 +108,7 @@ impl ParamView {
         }
     }
 
-    /// Stable identity used by [`Node`]'s `Hash`/`Eq` impls and by
+    /// Stable identity used by `Node`'s `Hash`/`Eq` impls and by
     /// optimizers' tape-deduplication logic.
     pub fn tape_ptr(&self) -> *const MatMulTape {
         Rc::as_ptr(&self.tape)
@@ -121,6 +122,11 @@ impl ParamView {
 /// `Rc<MatMulTape>` alive for its lifetime and re-uses it across forward
 /// passes (the `input` snapshot and `upstream` refs are overwritten each
 /// `forward`).
+///
+/// The gradient buffers, the input snapshot, the upstream `Node` refs, and
+/// the visit-count bookkeeping are `cfg(feature = "train")`-only — pure
+/// inference builds carry only the parameter buffers (`weights`, `bias`)
+/// and the dimension fields.
 pub struct MatMulTape {
     pub in_dim: usize,
     pub out_dim: usize,
@@ -133,43 +139,55 @@ pub struct MatMulTape {
 
     /// Snapshot of the input vector taken at forward time.  Overwritten on
     /// every `forward`.
+    #[cfg(feature = "train")]
     pub input: RefCell<Vec<f32>>,
 
     /// Per-output upstream gradient, accumulated by the dispatch loop in
     /// `Node::backward` and consumed by `run_backward`.
+    #[cfg(feature = "train")]
     pub d_out: RefCell<Vec<f32>>,
     /// Accumulated parameter gradients.  Reset by an explicit
     /// [`MatMulTape::reset_grads`] call (Phase 2 wires this into
     /// `Optimizer::zero_state`).
+    #[cfg(feature = "train")]
     pub d_weights: RefCell<Vec<f32>>,
+    #[cfg(feature = "train")]
     pub d_bias: RefCell<Vec<f32>>,
     /// Scratch buffer for `dx = Wᵀ d_out`.  Only populated when the inputs
     /// have a non-leaf operation.
+    #[cfg(feature = "train")]
     pub d_input: RefCell<Vec<f32>>,
 
     /// `Some(inputs)` if any of the input `Node`s carries a non-`None`
     /// operation, i.e. their gradients still need to be back-propagated
     /// through the upstream graph.  `None` when the inputs are pure leaves
     /// (the dx matmul can then be skipped entirely).
+    #[cfg(feature = "train")]
     pub upstream: RefCell<Option<Vec<Node>>>,
 
     /// Number of output `Node`s that have contributed to `d_out` in the
     /// current backward pass.  When this equals `out_dim`, `run_backward`
     /// fires.
+    #[cfg(feature = "train")]
     pub visit_count: Cell<usize>,
     /// Set to `true` after `run_backward` has fired this iteration.  Cleared
     /// by `forward` (or by `reset_grads` if forward never re-runs).
+    #[cfg(feature = "train")]
     pub backward_done: Cell<bool>,
     /// Guards `build_topo_recursive` against walking `upstream` once per
     /// output `Node` (`out_dim` redundant traversals).  The topo helper
     /// itself is responsible for clearing this flag once the topo is built.
+    #[cfg(feature = "train")]
     pub topo_walked: Cell<bool>,
 }
 
 impl MatMulTape {
-    /// Allocate a tape with the supplied weights and bias.  All gradient and
-    /// per-iteration buffers are zero-initialised; `upstream` is `None` until
-    /// the first `forward`.
+    /// Allocate a tape with the supplied weights and bias.
+    ///
+    /// Under `feature = "train"` all gradient and per-iteration buffers are
+    /// zero-initialised; `upstream` is `None` until the first `forward`.
+    /// Under inference-only builds those fields don't exist and the tape
+    /// holds only the parameter buffers.
     ///
     /// # Panics
     ///
@@ -186,14 +204,23 @@ impl MatMulTape {
             out_dim,
             weights: RefCell::new(weights),
             bias: RefCell::new(bias),
+            #[cfg(feature = "train")]
             input: RefCell::new(vec![0.0; in_dim]),
+            #[cfg(feature = "train")]
             d_out: RefCell::new(vec![0.0; out_dim]),
+            #[cfg(feature = "train")]
             d_weights: RefCell::new(vec![0.0; out_dim * in_dim]),
+            #[cfg(feature = "train")]
             d_bias: RefCell::new(vec![0.0; out_dim]),
+            #[cfg(feature = "train")]
             d_input: RefCell::new(vec![0.0; in_dim]),
+            #[cfg(feature = "train")]
             upstream: RefCell::new(None),
+            #[cfg(feature = "train")]
             visit_count: Cell::new(0),
+            #[cfg(feature = "train")]
             backward_done: Cell::new(false),
+            #[cfg(feature = "train")]
             topo_walked: Cell::new(false),
         })
     }
@@ -205,11 +232,12 @@ impl MatMulTape {
     /// here so a `forward` -> `backward` -> `forward` -> `backward` sequence
     /// works without an explicit `reset_grads` between iterations.  The
     /// accumulated `d_weights` / `d_bias` are *not* touched — the optimizer
-    /// owns that lifecycle (Phase 2).
+    /// owns that lifecycle.
     ///
     /// # Panics
     ///
     /// Panics if `inputs.len() != self.in_dim`.
+    #[cfg(feature = "train")]
     pub fn forward(self: &Rc<Self>, inputs: &[Node]) -> Vec<Node> {
         assert_eq!(
             inputs.len(),
@@ -297,6 +325,7 @@ impl MatMulTape {
     /// Accumulates `dW += d_out ⊗ input` and `db += d_out`, then (if the
     /// inputs were not leaves) propagates `dx = Wᵀ d_out` into the upstream
     /// `Node`s via `add_gradient`.
+    #[cfg(feature = "train")]
     pub fn run_backward(self: &Rc<Self>) {
         debug_assert!(
             !self.backward_done.get(),
@@ -364,8 +393,8 @@ impl MatMulTape {
     }
 
     /// Clear every transient and accumulated buffer the tape owns.
-    /// Optimizers call this at the start of a new mini-batch (Phase 2 wires
-    /// it into `Optimizer::zero_state`).
+    /// Optimizers call this at the start of a new mini-batch.
+    #[cfg(feature = "train")]
     pub fn reset_grads(&self) {
         for v in self.d_out.borrow_mut().iter_mut() {
             *v = 0.0;
@@ -392,14 +421,17 @@ impl MatMulTape {
         self.bias.borrow()
     }
 
+    #[cfg(feature = "train")]
     pub fn d_weights_ref(&self) -> Ref<'_, Vec<f32>> {
         self.d_weights.borrow()
     }
 
+    #[cfg(feature = "train")]
     pub fn d_bias_ref(&self) -> Ref<'_, Vec<f32>> {
         self.d_bias.borrow()
     }
 
+    #[cfg(feature = "train")]
     pub fn d_input_ref(&self) -> Ref<'_, Vec<f32>> {
         self.d_input.borrow()
     }
@@ -407,15 +439,18 @@ impl MatMulTape {
 
 impl std::fmt::Debug for MatMulTape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MatMulTape")
-            .field("in_dim", &self.in_dim)
-            .field("out_dim", &self.out_dim)
-            .field("visit_count", &self.visit_count.get())
-            .field("backward_done", &self.backward_done.get())
-            .finish()
+        let mut dbg = f.debug_struct("MatMulTape");
+        dbg.field("in_dim", &self.in_dim).field("out_dim", &self.out_dim);
+        #[cfg(feature = "train")]
+        {
+            dbg.field("visit_count", &self.visit_count.get())
+                .field("backward_done", &self.backward_done.get());
+        }
+        dbg.finish()
     }
 }
 
+#[cfg(feature = "train")]
 impl Drop for MatMulTape {
     fn drop(&mut self) {
         // If a backward pass started accumulating into `d_out` but the trigger

@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn test_matmul_forward_simple() {
         // 2x3 weights, identity check on the forward kernel.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let weights = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // [2, 3] row-major
         let bias = vec![0.5, -0.5];
@@ -506,7 +506,7 @@ mod tests {
     fn test_matmul_backward_leaves_8x4() {
         // 8x4 weight, [4] input that are pure leaves.  Compare gradients
         // against a hand-computed reference.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let mut seed = 0xC0FFEE_u32;
         let in_dim = 4;
@@ -565,7 +565,7 @@ mod tests {
         // graph: x[j] = (a + b) * c  for distinct (a, b, c) per j.  Verifies
         // that `dx = Wᵀ d_out` is propagated into the upstream Nodes and that
         // the topo walk orders them correctly.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let mut seed = 0xBADBEEF_u32;
         let in_dim = 3;
@@ -630,7 +630,7 @@ mod tests {
         // d_weights should accumulate across multiple backward passes until
         // an explicit `reset_grads()` call.  This is the contract Phase 2's
         // optimizer relies on for mini-batch gradient accumulation.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let weights = vec![0.5, -0.5, 1.0, 2.0]; // [2, 2]
         let bias = vec![0.0, 0.0];
@@ -667,7 +667,7 @@ mod tests {
         // Two consecutive backwards on two separate forwards must each fire
         // `run_backward` exactly once, not piggy-back on the prior pass'
         // visit_count.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let tape = MatMulTape::new(1, 2, vec![1.0, 2.0], vec![0.0, 0.0]);
 
@@ -688,7 +688,7 @@ mod tests {
     fn test_matmul_topo_walked_resets_after_backward() {
         // After `backward()` returns, `topo_walked` must be `false` so the
         // next `backward()` call walks `upstream` correctly.
-        use crate::engine::matmul::MatMulTape;
+        use crate::nn::matmul::MatMulTape;
 
         let tape = MatMulTape::new(2, 1, vec![1.0, 1.0], vec![0.0]);
         let a = Node::from(1.0);

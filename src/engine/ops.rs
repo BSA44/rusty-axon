@@ -1,7 +1,7 @@
 //! Definitions of differentiable operations that can be applied to values.
 
-use crate::engine::matmul::MatMulTape;
 use crate::engine::value::Node;
+use crate::nn::matmul::MatMulTape;
 use std::fmt::Display;
 use std::rc::Rc;
 
@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// pure micrograd-style primary structure.  `MatMul` is the only fused
 /// variant: every output `Node` of one matmul carries `(Rc<MatMulTape>, usize)`
 /// and the actual `out_dim × in_dim` weight buffer lives exactly once inside
-/// the shared tape.  See [`crate::engine::matmul::MatMulTape`] for the
+/// the shared tape.  See [`crate::nn::matmul::MatMulTape`] for the
 /// dispatch protocol.
 #[derive(Debug, Clone)]
 pub enum Operation {

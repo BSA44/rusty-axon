@@ -1,38 +1,35 @@
 //! Library entry point for the `rusty-axon` training-capable edge framework.
 //!
-//! The crate is divided into the following high-level areas:
+//! Phase 6 splits the crate into:
 //! - `engine`: scalar autograd (`Value`, `Node`, `Operation`) — `train` only.
-//! - `nn`: neural-network building blocks (neurons, layers, MLPs, activations,
-//!   visualization). Currently gated on `train`; Phase 6 will split this into
-//!   a train path (`Node`-based) and an always-on pure-`&[f32]` inference path.
+//! - `nn`: neural-network building blocks.  Always-on, but the `Node`-based
+//!   train surface (`Linear::forward`, `Mlp::forward`, `Activations::apply`,
+//!   visualization, the legacy `Neuron`/`Layer` baseline) is gated on
+//!   `train`; the pure-`&[f32]` inference surface (`Linear::infer_into_f32`,
+//!   `Mlp::infer`, `Mlp::infer_into`, `Activations::apply_f32_inplace`)
+//!   is always available.
+//! - `format`: `.axn` model file I/O.  Always-on so inference builds can
+//!   load pretrained weights.
 //! - `optim`: parameter update routines (SGD, MeProp) — `train` only.
 //! - `loss`: loss functions (MSE, RMSE, CrossEntropy) — `train` only.
 
-// All of the existing v0.2 module tree depends on the scalar autograd engine,
-// so every public module is gated on `train` in Phase 0. Phase 6 splits `nn`
-// to expose a pure-`&[f32]` inference surface when only `inference` is on.
 #[cfg(feature = "train")]
 pub mod engine;
-#[cfg(feature = "train")]
 pub mod format;
 #[cfg(feature = "train")]
 pub mod loss;
-#[cfg(feature = "train")]
 pub mod nn;
 #[cfg(feature = "train")]
 pub mod optim;
 
-// Re-export the most commonly used types so downstream crates can simply
-// `use rusty_axon::Value;`.
+// Re-export the most commonly used types.  The train-only re-exports stay
+// gated; the always-on ones are surfaced for both feature combos.
 #[cfg(feature = "train")]
 pub use engine::value::Value;
-#[cfg(feature = "train")]
 pub use nn::activations::Activations;
 #[cfg(feature = "train")]
 pub use nn::layer::Layer;
-#[cfg(feature = "train")]
 pub use nn::linear::Linear;
-#[cfg(feature = "train")]
 pub use nn::mlp::Mlp;
 #[cfg(feature = "train")]
 pub use nn::neuron::Neuron;

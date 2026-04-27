@@ -20,8 +20,8 @@ starting any phase.
 | 3     | `Mlp` shim over `Linear`; legacy regression test           | ✅ |
 | 4     | `matrixmultiply` integration + naive fallback              | ✅ |
 | 5     | `.axn` model serialization                                 | ✅ |
-| 6     | Inference-only feature gating + pure-`&[f32]` forward      | ⏳ next |
-| 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ |
+| 6     | Inference-only feature gating + pure-`&[f32]` forward      | ✅ |
+| 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ next |
 | 8     | Static arena + criterion benchmark suite                   | ⏳ |
 | 9     | aarch64 cross-compile (Pi Zero 2 W)                        | ⏳ |
 | 10    | Binary-size automation                                     | ⏳ |
@@ -48,18 +48,18 @@ src/
 ├── engine/
 │   ├── value.rs               # Node, Value, operators, backward(), to_dot()
 │   ├── ops.rs                 # Operation enum (incl. MatMul variant)
-│   ├── matmul/
-│   │   ├── mod.rs             # MatMulTape: fused matmul forward/backward       (Phase 1)
+│   └── tests.rs               # autograd correctness tests (train-only)
+├── nn/                        # always-on; submodules cfg-gated as noted
+│   ├── matmul/                # relocated here from engine in Phase 6
+│   │   ├── mod.rs             # MatMulTape (grad fields cfg-gated on train)    (Phase 1/6)
 │   │   ├── kernel.rs          # cfg-gated `sgemm_rm` re-export                  (Phase 4)
 │   │   ├── kernel_naive.rs    # naive scalar fallback                            (Phase 4)
 │   │   └── kernel_mm.rs       # matrixmultiply-backed (auto-NEON on aarch64)    (Phase 4)
-│   └── tests.rs               # autograd + matmul correctness tests
-├── nn/
-│   ├── linear.rs              # fused Linear layer (forward, infer_into_f32)    (Phase 2)
-│   ├── param_view.rs          # ParamView leaf re-export for Node               (Phase 2)
-│   ├── mlp.rs                 # multi-layer perceptron over Vec<Linear>         (Phase 3)
-│   ├── activations.rs         # Sigmoid, Tanh, ReLU, Swish, None
-│   ├── visualization.rs       # layer-oriented network diagrams
+│   ├── linear.rs              # forward [train] + infer_into_f32 [always]      (Phase 2/6)
+│   ├── param_view.rs          # ParamView re-export for Node (train-only)      (Phase 2)
+│   ├── mlp.rs                 # forward [train] + infer / infer_into [always]  (Phase 3/6)
+│   ├── activations.rs         # apply [train] + apply_f32_inplace [always]     (Phase 6)
+│   ├── visualization.rs       # layer-oriented network diagrams (train-only)
 │   ├── neuron.rs              # legacy scalar single neuron (Phase 8 baseline)
 │   ├── layer.rs               # legacy scalar fully-connected layer (Phase 8 baseline)
 │   ├── arena.rs               # static inference arena                          (Phase 8)

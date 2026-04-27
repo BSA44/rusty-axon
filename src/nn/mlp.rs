@@ -1,21 +1,24 @@
 //! Multi-layer perceptron convenience wrapper.
 //!
-//! Phase 3 swaps the internal `Vec<Layer>` (legacy scalar `Neuron` dot
-//! products) for `Vec<Linear>` (fused [`MatMulTape`] per layer).  The public
-//! API — `Mlp::new`, `forward`, `parameters`, the visualization helpers —
-//! is unchanged so every existing example continues to build and run.  The
-//! legacy `Layer`/`Neuron` modules are kept on disk as the scalar baseline
-//! that Phase 8 benchmarks against.
+//! Phase 3 swapped the internal `Vec<Layer>` (legacy scalar `Neuron` dot
+//! products) for `Vec<Linear>` (fused [`MatMulTape`] per layer).  Phase 6
+//! ungates the type so it's available in pure-inference builds: the
+//! `Node`-based `forward` and parameter-list helpers stay behind
+//! `cfg(feature = "train")`, while `save`, `load`, `infer`, and `infer_into`
+//! are always-on.
 
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
+#[cfg(feature = "train")]
 use std::ops::Range;
 use std::path::Path;
 
+#[cfg(feature = "train")]
 use crate::engine::value::Node;
 use crate::format::axn::{AxnReader, AxnWriter};
 use crate::nn::activations::Activations;
 use crate::nn::linear::Linear;
+#[cfg(feature = "train")]
 use crate::nn::visualization::{render_network_to, NetworkVisualizationConfig};
 
 /// Simple feed-forward neural network composed of sequential `Linear` layers.
@@ -84,7 +87,9 @@ impl Mlp {
         }
     }
 
-    /// Evaluate the network on a single input example.
+    /// Train-path forward.  Builds the `Node` graph that `loss.backward()`
+    /// later walks.
+    #[cfg(feature = "train")]
     pub fn forward(&self, inputs: &[Node]) -> Vec<Node> {
         let mut current = inputs.to_vec();
         for layer in self.layers.iter() {
@@ -93,8 +98,99 @@ impl Mlp {
         current
     }
 
+    /// Pure-`f32` inference: allocates the output `Vec<f32>` and runs the
+    /// network forward.  Always available, including under `--features
+    /// inference`.  Each call allocates two scratch buffers; use
+    /// [`Mlp::infer_into`] (Phase 8) to avoid them in hot loops.
+    pub fn infer(&self, input: &[f32]) -> Vec<f32> {
+        assert_eq!(
+            input.len(),
+            self.layers[0].in_dim(),
+            "input length must match the first layer's in_dim ({})",
+            self.layers[0].in_dim()
+        );
+        let mut current: Vec<f32> = input.to_vec();
+        let mut next: Vec<f32> = Vec::new();
+        for layer in self.layers.iter() {
+            next.clear();
+            next.resize(layer.out_dim(), 0.0);
+            layer.infer_into_f32(&current, &mut next);
+            std::mem::swap(&mut current, &mut next);
+        }
+        current
+    }
+
+    /// Pure-`f32` inference writing into a caller-provided `output` slice.
+    /// Allocates one internal scratch buffer of the largest hidden size.
+    /// Phase 8 introduces a static-arena variant that drops this allocation
+    /// entirely.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `input.len()` or `output.len()` does not match the network's
+    /// input / output dimensions.
+    pub fn infer_into(&self, input: &[f32], output: &mut [f32]) {
+        assert_eq!(
+            input.len(),
+            self.layers[0].in_dim(),
+            "input length must match the first layer's in_dim ({})",
+            self.layers[0].in_dim()
+        );
+        assert_eq!(
+            output.len(),
+            self.layers.last().unwrap().out_dim(),
+            "output length must match the last layer's out_dim ({})",
+            self.layers.last().unwrap().out_dim()
+        );
+
+        if self.layers.len() == 1 {
+            self.layers[0].infer_into_f32(input, output);
+            return;
+        }
+
+        // Two ping-pong scratch buffers sized to the largest hidden width.
+        let mut max_hidden = 0;
+        for l in &self.layers[..self.layers.len() - 1] {
+            if l.out_dim() > max_hidden {
+                max_hidden = l.out_dim();
+            }
+        }
+        let mut buf_a = vec![0.0_f32; max_hidden];
+        let mut buf_b = vec![0.0_f32; max_hidden];
+
+        // First layer: input -> buf_a
+        let first = &self.layers[0];
+        let first_out = &mut buf_a[..first.out_dim()];
+        first.infer_into_f32(input, first_out);
+
+        // Middle layers ping-pong between buf_a / buf_b.
+        let mut src_is_a = true;
+        for layer in &self.layers[1..self.layers.len() - 1] {
+            let in_dim = layer.in_dim();
+            let out_dim = layer.out_dim();
+            if src_is_a {
+                let (src, dst) = (&buf_a[..in_dim], &mut buf_b[..out_dim]);
+                layer.infer_into_f32(src, dst);
+            } else {
+                let (src, dst) = (&buf_b[..in_dim], &mut buf_a[..out_dim]);
+                layer.infer_into_f32(src, dst);
+            }
+            src_is_a = !src_is_a;
+        }
+
+        // Final layer writes directly into `output`.
+        let last = self.layers.last().unwrap();
+        let last_in_dim = last.in_dim();
+        if src_is_a {
+            last.infer_into_f32(&buf_a[..last_in_dim], output);
+        } else {
+            last.infer_into_f32(&buf_b[..last_in_dim], output);
+        }
+    }
+
     /// All trainable parameters across every layer.  Order: layer-0 weights,
     /// layer-0 biases, layer-1 weights, layer-1 biases, ...
+    #[cfg(feature = "train")]
     pub fn parameters(&self) -> Vec<Node> {
         self.layers
             .iter()
@@ -117,6 +213,7 @@ impl Mlp {
     ///
     /// # Panics
     /// Panics if `range` falls outside `0..num_linear_layers()`.
+    #[cfg(feature = "train")]
     pub fn parameters_for_layers(&self, range: Range<usize>) -> Vec<Node> {
         assert!(
             range.end <= self.layers.len(),
@@ -245,6 +342,7 @@ impl Mlp {
     }
 
     /// Generate layer names for visualization
+    #[cfg(feature = "train")]
     fn generate_layer_names(&self) -> Vec<String> {
         let mut names = Vec::new();
 
@@ -265,6 +363,7 @@ impl Mlp {
     }
 
     /// Generate activation function names for visualization
+    #[cfg(feature = "train")]
     fn generate_activation_names(&self) -> Vec<String> {
         let mut names = Vec::new();
 
@@ -286,6 +385,7 @@ impl Mlp {
     /// let mlp = Mlp::new(&[2, 4, 4, 1], &[Activations::Tanh, Activations::Tanh, Activations::Sigmoid]);
     /// mlp.visualize_network("my_network", "png").unwrap();
     /// ```
+    #[cfg(feature = "train")]
     pub fn visualize_network(&self, output_name: &str, format: &str) -> std::io::Result<()> {
         let config = NetworkVisualizationConfig::default();
         self.visualize_network_with_config(output_name, format, &config)
@@ -305,6 +405,7 @@ impl Mlp {
     ///
     /// mlp.visualize_network_with_config("my_network", "png", &config).unwrap();
     /// ```
+    #[cfg(feature = "train")]
     pub fn visualize_network_with_config(
         &self,
         output_name: &str,
@@ -324,16 +425,19 @@ impl Mlp {
     }
 
     /// Render network architecture to PNG (convenience method)
+    #[cfg(feature = "train")]
     pub fn render_network_png(&self, output_name: &str) -> std::io::Result<()> {
         self.visualize_network(output_name, "png")
     }
 
     /// Render network architecture to SVG (convenience method)
+    #[cfg(feature = "train")]
     pub fn render_network_svg(&self, output_name: &str) -> std::io::Result<()> {
         self.visualize_network(output_name, "svg")
     }
 
     /// Render network architecture to PDF (convenience method)
+    #[cfg(feature = "train")]
     pub fn render_network_pdf(&self, output_name: &str) -> std::io::Result<()> {
         self.visualize_network(output_name, "pdf")
     }

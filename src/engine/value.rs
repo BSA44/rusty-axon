@@ -1,7 +1,7 @@
 //! Scalar value node that participates in automatic differentiation.
 //use std::collections::HashSet;
-use crate::engine::matmul::{MatMulTape, ParamView};
 use crate::engine::ops::Operation;
+use crate::nn::matmul::{MatMulTape, ParamView};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -346,8 +346,8 @@ impl Node {
             NodeStorage::Owned(v) => format!("n{:x}", Rc::as_ptr(v) as usize),
             NodeStorage::Param(view) => {
                 let kind_tag = match view.kind {
-                    crate::engine::matmul::ParamKind::Weight => 'w',
-                    crate::engine::matmul::ParamKind::Bias => 'b',
+                    crate::nn::matmul::ParamKind::Weight => 'w',
+                    crate::nn::matmul::ParamKind::Bias => 'b',
                 };
                 format!(
                     "p{:x}_{}{}",
