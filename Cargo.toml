@@ -115,3 +115,8 @@ required-features = ["train"]
 name = "bench_regression_housing_meprop"
 path = "examples/bench_regression_housing_meprop.rs"
 required-features = ["train"]
+
+[[example]]
+name = "bench_mnist_matmul"
+path = "examples/bench_mnist_matmul.rs"
+required-features = ["train"]
