@@ -7,9 +7,13 @@
 //! legacy `Layer`/`Neuron` modules are kept on disk as the scalar baseline
 //! that Phase 8 benchmarks against.
 
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter};
 use std::ops::Range;
+use std::path::Path;
 
 use crate::engine::value::Node;
+use crate::format::axn::{AxnReader, AxnWriter};
 use crate::nn::activations::Activations;
 use crate::nn::linear::Linear;
 use crate::nn::visualization::{render_network_to, NetworkVisualizationConfig};
@@ -129,6 +133,115 @@ impl Mlp {
     /// Number of `Linear` layers (i.e. `layer_widths.len() - 1`).
     pub fn num_linear_layers(&self) -> usize {
         self.layers.len()
+    }
+
+    /// Serialize the network to an `.axn` file.
+    ///
+    /// Writes one `layer{N}.weight` (row-major `[out_dim, in_dim]`, F32) and
+    /// one `layer{N}.bias` (`[out_dim]`, F32) per `Linear`.  Activation
+    /// choices are **not** stored in v1; callers pass them back in to
+    /// [`Mlp::load`].
+    pub fn save(&self, path: &Path) -> io::Result<()> {
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
+        let mut axn = AxnWriter::new(writer);
+        for (i, layer) in self.layers.iter().enumerate() {
+            let weight_name = format!("layer{}.weight", i);
+            let bias_name = format!("layer{}.bias", i);
+            let dims = [layer.out_dim() as u32, layer.in_dim() as u32];
+            axn.add_tensor_f32(&weight_name, &dims, &layer.weights());
+            axn.add_tensor_f32(&bias_name, &[layer.out_dim() as u32], &layer.bias());
+        }
+        axn.finish()?;
+        Ok(())
+    }
+
+    /// Reconstruct an `Mlp` from an `.axn` file.  `activations.len()` must
+    /// match the number of `Linear` layers found on disk.
+    pub fn load(path: &Path, activations: &[Activations]) -> io::Result<Self> {
+        let file = File::open(path)?;
+        let mut reader = AxnReader::open(BufReader::new(file))?;
+
+        // Pair tensors by layer index using the `layer{N}.{weight|bias}` convention.
+        let metas: Vec<_> = reader.tensors().to_vec();
+        let num_layers = metas.len() / 2;
+        if metas.len() != num_layers * 2 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "expected 2 tensors per layer (weight + bias)",
+            ));
+        }
+        if activations.len() != num_layers {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "activation count {} does not match {} layers in `{}`",
+                    activations.len(),
+                    num_layers,
+                    path.display()
+                ),
+            ));
+        }
+
+        let mut layers = Vec::with_capacity(num_layers);
+        for i in 0..num_layers {
+            let w_name = format!("layer{}.weight", i);
+            let b_name = format!("layer{}.bias", i);
+            let w_idx = metas
+                .iter()
+                .position(|m| m.name == w_name)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("missing tensor `{}`", w_name),
+                    )
+                })?;
+            let b_idx = metas
+                .iter()
+                .position(|m| m.name == b_name)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("missing tensor `{}`", b_name),
+                    )
+                })?;
+            let w_meta = &metas[w_idx];
+            let b_meta = &metas[b_idx];
+            if w_meta.dims.len() != 2 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("`{}` must be rank-2", w_name),
+                ));
+            }
+            if b_meta.dims.len() != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("`{}` must be rank-1", b_name),
+                ));
+            }
+            let out_dim = w_meta.dims[0] as usize;
+            let in_dim = w_meta.dims[1] as usize;
+            if b_meta.dims[0] as usize != out_dim {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "`{}` out_dim {} does not match `{}` length {}",
+                        w_name, out_dim, b_name, b_meta.dims[0]
+                    ),
+                ));
+            }
+            let weights = reader.read_tensor_f32(w_idx)?;
+            let bias = reader.read_tensor_f32(b_idx)?;
+            layers.push(Linear::with_weights(
+                in_dim,
+                out_dim,
+                weights,
+                bias,
+                activations[i].clone(),
+            ));
+        }
+
+        Ok(Self::with_layers(layers))
     }
 
     /// Generate layer names for visualization

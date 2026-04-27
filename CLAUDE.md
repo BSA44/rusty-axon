@@ -19,8 +19,8 @@ starting any phase.
 | 2     | `Linear` layer + `ParamView` Node enum                     | ✅ |
 | 3     | `Mlp` shim over `Linear`; legacy regression test           | ✅ |
 | 4     | `matrixmultiply` integration + naive fallback              | ✅ |
-| 5     | `.axn` model serialization                                 | ⏳ next |
-| 6     | Inference-only feature gating + pure-`&[f32]` forward      | ⏳ |
+| 5     | `.axn` model serialization                                 | ✅ |
+| 6     | Inference-only feature gating + pure-`&[f32]` forward      | ⏳ next |
 | 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ |
 | 8     | Static arena + criterion benchmark suite                   | ⏳ |
 | 9     | aarch64 cross-compile (Pi Zero 2 W)                        | ⏳ |
@@ -79,7 +79,8 @@ examples/                      # all gated on required-features = ["train"]
 
 docs/
 ├── PAPER_REWORK_PLAN.md       # AUTHORITATIVE 13-phase implementation plan
-└── (PAPER.md, BINARY_SIZE.md, AXN_FORMAT.md, RPI_DEPLOY.md — later phases)
+├── AXN_FORMAT.md              # .axn v1 wire format reference (Phase 5)
+└── (PAPER.md, BINARY_SIZE.md, RPI_DEPLOY.md — later phases)
 ```
 
 ## Cargo features and profiles

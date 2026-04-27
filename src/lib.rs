@@ -14,6 +14,8 @@
 #[cfg(feature = "train")]
 pub mod engine;
 #[cfg(feature = "train")]
+pub mod format;
+#[cfg(feature = "train")]
 pub mod loss;
 #[cfg(feature = "train")]
 pub mod nn;

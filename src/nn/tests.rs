@@ -817,4 +817,65 @@ mod tests {
         assert!(close(dw[0], 2.0, 1e-5));
         assert!(close(dw[1], 1.0, 1e-5));
     }
+
+    // -----------------------------------------------------------------
+    // Phase 5: .axn save/load round-trip
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn mlp_axn_round_trip_bit_exact_forward() {
+        use std::env::temp_dir;
+        use std::fs;
+
+        let mlp = Mlp::new(
+            &[8, 6, 4, 2],
+            &[Activations::ReLU, Activations::Tanh, Activations::None],
+        );
+        let inputs: Vec<Node> = (0..8).map(|i| Node::from(0.13 * i as f32 - 0.5)).collect();
+        let expected: Vec<f32> = mlp.forward(&inputs).iter().map(|n| n.get_value()).collect();
+
+        let path = temp_dir().join("rusty_axon_test_mlp_round_trip.axn");
+        let _ = fs::remove_file(&path);
+        mlp.save(&path).unwrap();
+
+        let loaded = Mlp::load(
+            &path,
+            &[Activations::ReLU, Activations::Tanh, Activations::None],
+        )
+        .unwrap();
+        let got: Vec<f32> = loaded
+            .forward(&inputs)
+            .iter()
+            .map(|n| n.get_value())
+            .collect();
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(expected.len(), got.len());
+        for (e, g) in expected.iter().zip(got.iter()) {
+            assert!(
+                (e - g).abs() < 1e-6,
+                "forward output diverged after round-trip: {} vs {}",
+                e,
+                g
+            );
+        }
+    }
+
+    #[test]
+    fn mlp_load_rejects_wrong_activation_count() {
+        use std::env::temp_dir;
+        use std::fs;
+
+        let mlp = Mlp::new(&[3, 4, 2], &[Activations::ReLU, Activations::None]);
+        let path = temp_dir().join("rusty_axon_test_mlp_act_mismatch.axn");
+        let _ = fs::remove_file(&path);
+        mlp.save(&path).unwrap();
+
+        let err = match Mlp::load(&path, &[Activations::ReLU]) {
+            Ok(_) => panic!("expected load to fail with mismatched activation count"),
+            Err(e) => e,
+        };
+        let _ = fs::remove_file(&path);
+        assert!(err.to_string().contains("activation count"));
+    }
 }
