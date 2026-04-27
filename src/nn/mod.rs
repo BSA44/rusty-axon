@@ -12,6 +12,8 @@ pub mod layer;
 pub mod linear;
 pub mod matmul;
 pub mod mlp;
+#[cfg(feature = "quant-i8")]
+pub mod quant;
 #[cfg(feature = "train")]
 pub mod neuron;
 #[cfg(feature = "train")]

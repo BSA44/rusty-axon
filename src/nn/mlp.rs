@@ -89,13 +89,39 @@ impl Mlp {
 
     /// Train-path forward.  Builds the `Node` graph that `loss.backward()`
     /// later walks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any layer is quantized (Phase 7's INT8 path is
+    /// inference-only).  Use [`Mlp::infer`] / [`Mlp::infer_into`] to run a
+    /// quantized model, or reload f32 weights to fine-tune.
     #[cfg(feature = "train")]
     pub fn forward(&self, inputs: &[Node]) -> Vec<Node> {
+        assert!(
+            !self.is_quantized(),
+            "Cannot train a quantized Mlp; load f32 weights for fine-tuning"
+        );
         let mut current = inputs.to_vec();
         for layer in self.layers.iter() {
             current = layer.forward(&current);
         }
         current
+    }
+
+    /// Whether **any** layer of this network is quantized (Phase 7).
+    pub fn is_quantized(&self) -> bool {
+        self.layers.iter().any(|l| l.is_quantized())
+    }
+
+    /// Quantize every layer to per-tensor symmetric INT8 in place (Phase 7).
+    /// Frees the f32 weight buffers; biases stay f32.  After this call the
+    /// model is inference-only — `forward` and `parameters` panic until
+    /// f32 weights are reloaded.
+    #[cfg(feature = "quant-i8")]
+    pub fn quantize_to_i8(&mut self) {
+        for layer in self.layers.iter_mut() {
+            layer.quantize_to_i8();
+        }
     }
 
     /// Pure-`f32` inference: allocates the output `Vec<f32>` and runs the
@@ -246,11 +272,25 @@ impl Mlp {
             let weight_name = format!("layer{}.weight", i);
             let bias_name = format!("layer{}.bias", i);
             let dims = [layer.out_dim() as u32, layer.in_dim() as u32];
+            #[cfg(feature = "quant-i8")]
+            if let Some((qweights, scale)) = layer.quantized_weights() {
+                axn.add_tensor_i8(&weight_name, &dims, scale, qweights);
+                axn.add_tensor_f32(&bias_name, &[layer.out_dim() as u32], &layer.bias());
+                continue;
+            }
             axn.add_tensor_f32(&weight_name, &dims, &layer.weights());
             axn.add_tensor_f32(&bias_name, &[layer.out_dim() as u32], &layer.bias());
         }
         axn.finish()?;
         Ok(())
+    }
+
+    /// Quantize-then-save shortcut: equivalent to `quantize_to_i8()` followed
+    /// by `save()`.  Mutates `self`.
+    #[cfg(feature = "quant-i8")]
+    pub fn save_quantized(&mut self, path: &Path) -> io::Result<()> {
+        self.quantize_to_i8();
+        self.save(path)
     }
 
     /// Reconstruct an `Mlp` from an `.axn` file.  `activations.len()` must
@@ -327,15 +367,46 @@ impl Mlp {
                     ),
                 ));
             }
-            let weights = reader.read_tensor_f32(w_idx)?;
             let bias = reader.read_tensor_f32(b_idx)?;
-            layers.push(Linear::with_weights(
-                in_dim,
-                out_dim,
-                weights,
-                bias,
-                activations[i].clone(),
-            ));
+            // Phase 7: weight tensors may be either F32 or I8.  Dispatch on
+            // the dtype we parsed from the header.
+            match w_meta.dtype {
+                crate::format::axn::Dtype::F32 => {
+                    let weights = reader.read_tensor_f32(w_idx)?;
+                    layers.push(Linear::with_weights(
+                        in_dim,
+                        out_dim,
+                        weights,
+                        bias,
+                        activations[i].clone(),
+                    ));
+                }
+                crate::format::axn::Dtype::I8 => {
+                    #[cfg(feature = "quant-i8")]
+                    {
+                        let (qweights, scale) = reader.read_tensor_i8(w_idx)?;
+                        layers.push(Linear::with_quantized_weights(
+                            in_dim,
+                            out_dim,
+                            qweights,
+                            scale,
+                            bias,
+                            activations[i].clone(),
+                        ));
+                    }
+                    #[cfg(not(feature = "quant-i8"))]
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "`{}` is INT8-quantized but the `quant-i8` feature \
+                                 is disabled in this build",
+                                w_name
+                            ),
+                        ));
+                    }
+                }
+            }
         }
 
         Ok(Self::with_layers(layers))

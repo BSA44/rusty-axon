@@ -21,8 +21,8 @@ starting any phase.
 | 4     | `matrixmultiply` integration + naive fallback              | ✅ |
 | 5     | `.axn` model serialization                                 | ✅ |
 | 6     | Inference-only feature gating + pure-`&[f32]` forward      | ✅ |
-| 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ⏳ next |
-| 8     | Static arena + criterion benchmark suite                   | ⏳ |
+| 7     | INT8 PTQ (weights-only, per-tensor symmetric)              | ✅ |
+| 8     | Static arena + criterion benchmark suite                   | ⏳ next |
 | 9     | aarch64 cross-compile (Pi Zero 2 W)                        | ⏳ |
 | 10    | Binary-size automation                                     | ⏳ |
 | 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ⏳ |

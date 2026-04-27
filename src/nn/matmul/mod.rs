@@ -193,10 +193,12 @@ impl MatMulTape {
     ///
     /// Panics if `weights.len() != out_dim * in_dim` or `bias.len() != out_dim`.
     pub fn new(in_dim: usize, out_dim: usize, weights: Vec<f32>, bias: Vec<f32>) -> Rc<Self> {
-        assert_eq!(
-            weights.len(),
-            out_dim * in_dim,
-            "weights must be row-major [out_dim, in_dim]"
+        // `weights` may be empty when the owning `Linear` is quantized
+        // (Phase 7) and the f32 buffer is no longer needed.  Otherwise it
+        // must be the full row-major `[out_dim, in_dim]` matrix.
+        assert!(
+            weights.is_empty() || weights.len() == out_dim * in_dim,
+            "weights must be empty or row-major [out_dim, in_dim]"
         );
         assert_eq!(bias.len(), out_dim, "bias must be [out_dim]");
         Rc::new(Self {

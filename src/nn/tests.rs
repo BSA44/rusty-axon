@@ -936,4 +936,87 @@ mod tests {
             assert_eq!(a.to_bits(), b.to_bits(), "alloc={} into={}", a, b);
         }
     }
+
+    // -------- Phase 7: INT8 PTQ end-to-end --------
+
+    #[cfg(feature = "quant-i8")]
+    #[test]
+    fn quantize_mlp_inference_close_to_f32() {
+        // Quantize-then-infer should match f32 inference closely for a small
+        // randomly-initialized network.  The bound is generous: per-tensor
+        // symmetric PTQ on small layers is noisy at the per-element level
+        // but stays close in aggregate.
+        let mlp_f32 = Mlp::new(
+            &[8, 16, 4],
+            &[Activations::ReLU, Activations::None],
+        );
+        let input: Vec<f32> = (0..8).map(|i| ((i as f32) * 0.31).sin()).collect();
+        let f32_out = mlp_f32.infer(&input);
+
+        // Build a separate quantized copy from the same weights via save/load.
+        let dir = std::env::temp_dir();
+        let path = dir.join("rusty_axon_test_quantize.axn");
+        mlp_f32.save(&path).unwrap();
+        let mut mlp_q = Mlp::load(
+            &path,
+            &[Activations::ReLU, Activations::None],
+        )
+        .unwrap();
+        assert!(!mlp_q.is_quantized());
+        mlp_q.quantize_to_i8();
+        assert!(mlp_q.is_quantized());
+
+        let q_out = mlp_q.infer(&input);
+        assert_eq!(f32_out.len(), q_out.len());
+        // Per-element drift bound is loose; the point is "in the same ballpark".
+        let max_err = f32_out
+            .iter()
+            .zip(q_out.iter())
+            .fold(0.0_f32, |acc, (a, b)| acc.max((a - b).abs()));
+        assert!(max_err < 0.5, "f32 vs quant max_err = {}", max_err);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(feature = "quant-i8")]
+    #[test]
+    fn quantized_axn_round_trip() {
+        // Save quantized -> load quantized -> identical inference outputs.
+        let mlp = Mlp::new(
+            &[6, 8, 3],
+            &[Activations::ReLU, Activations::None],
+        );
+        let input: Vec<f32> = (0..6).map(|i| (i as f32) * 0.1 - 0.3).collect();
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("rusty_axon_test_quant_round_trip.axn");
+
+        // Build quantized copy via load (so the original f32 model stays for
+        // reference) and then save it back out as I8.
+        mlp.save(&path).unwrap();
+        let mut q = Mlp::load(&path, &[Activations::ReLU, Activations::None]).unwrap();
+        q.save_quantized(&path).unwrap();
+
+        let q_loaded =
+            Mlp::load(&path, &[Activations::ReLU, Activations::None]).unwrap();
+        assert!(q_loaded.is_quantized());
+
+        let a = q.infer(&input);
+        let b = q_loaded.infer(&input);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert_eq!(x.to_bits(), y.to_bits(), "{} vs {}", x, y);
+        }
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(feature = "quant-i8")]
+    #[test]
+    #[should_panic(expected = "Cannot train a quantized")]
+    fn quantized_forward_panics() {
+        let mut mlp = Mlp::new(&[2, 3, 1], &[Activations::ReLU, Activations::None]);
+        mlp.quantize_to_i8();
+        let input = vec![Node::from(0.5), Node::from(-0.2)];
+        let _ = mlp.forward(&input);
+    }
 }
