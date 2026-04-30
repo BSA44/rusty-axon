@@ -17,6 +17,7 @@ use std::path::Path;
 use crate::engine::value::Node;
 use crate::format::axn::{AxnReader, AxnWriter};
 use crate::nn::activations::Activations;
+use crate::nn::arena::InferArena;
 use crate::nn::linear::Linear;
 #[cfg(feature = "train")]
 use crate::nn::visualization::{render_network_to, NetworkVisualizationConfig};
@@ -212,6 +213,84 @@ impl Mlp {
         } else {
             last.infer_into_f32(&buf_b[..last_in_dim], output);
         }
+    }
+
+    /// Pure-`f32` inference using a caller-owned [`InferArena`] for every
+    /// intermediate layer's scratch space.  Allocates **zero** bytes per call
+    /// once the arena is built — the headline edge-inference path for the
+    /// paper's latency table.
+    ///
+    /// The arena must have been built with [`InferArena::for_mlp`] for an
+    /// `Mlp` of identical shape.  Mismatched shapes panic.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `input.len()` or `output.len()` does not match the network's
+    /// input / output dimensions, or if `arena.slots.len() != num_layers - 1`.
+    pub fn infer_into_arena(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+        arena: &mut InferArena,
+    ) {
+        let n = self.layers.len();
+        assert_eq!(
+            input.len(),
+            self.layers[0].in_dim(),
+            "input length must match the first layer's in_dim ({})",
+            self.layers[0].in_dim()
+        );
+        assert_eq!(
+            output.len(),
+            self.layers[n - 1].out_dim(),
+            "output length must match the last layer's out_dim ({})",
+            self.layers[n - 1].out_dim()
+        );
+        assert_eq!(
+            arena.slots.len(),
+            n.saturating_sub(1),
+            "arena slot count {} does not match {} intermediate layers; \
+             rebuild the arena with InferArena::for_mlp(&mlp)",
+            arena.slots.len(),
+            n.saturating_sub(1)
+        );
+
+        // Single-layer fast path: no intermediates needed.
+        if n == 1 {
+            self.layers[0].infer_into_f32(input, output);
+            return;
+        }
+
+        // Layer 0: input -> arena.buffer[slots[0]].
+        {
+            let slot0 = arena.slots[0].clone();
+            let out_slice = &mut arena.buffer[slot0];
+            self.layers[0].infer_into_f32(input, out_slice);
+        }
+
+        // Middle layers: arena.buffer[slots[i-1]] -> arena.buffer[slots[i]].
+        // Slots are allocated contiguously and in order, so slots[i].start ==
+        // slots[i-1].end.  `split_at_mut` at slots[i].start lets us hold the
+        // previous slot immutably and the current one mutably without unsafe.
+        for i in 1..n - 1 {
+            let in_range = arena.slots[i - 1].clone();
+            let out_range = arena.slots[i].clone();
+            debug_assert_eq!(
+                in_range.end, out_range.start,
+                "InferArena slots are expected to be contiguous"
+            );
+            let split = out_range.start;
+            let out_len = out_range.end - out_range.start;
+            let (head, tail) = arena.buffer.split_at_mut(split);
+            let in_slice = &head[in_range];
+            let out_slice = &mut tail[..out_len];
+            self.layers[i].infer_into_f32(in_slice, out_slice);
+        }
+
+        // Last layer: arena.buffer[slots[n-2]] -> output.
+        let last_in_range = arena.slots[n - 2].clone();
+        let last_in_slice = &arena.buffer[last_in_range];
+        self.layers[n - 1].infer_into_f32(last_in_slice, output);
     }
 
     /// All trainable parameters across every layer.  Order: layer-0 weights,

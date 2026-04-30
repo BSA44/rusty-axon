@@ -16,7 +16,7 @@
 /// Panics on a debug build if any of `lda < k`, `ldb < n`, `ldc < n`, or any
 /// of the slice lengths is too small to address `[m, k] · [k, n] -> [m, n]`.
 #[allow(dead_code)] // unused outside tests under the default (matrixmultiply) build
-pub(crate) fn sgemm_rm(
+pub fn sgemm_rm(
     m: usize,
     k: usize,
     n: usize,

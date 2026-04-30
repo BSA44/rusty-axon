@@ -41,7 +41,7 @@ pub(crate) mod kernel_naive;
 #[cfg(feature = "matrixmultiply")]
 pub(crate) mod kernel_mm;
 
-pub(crate) use kernel::sgemm_rm;
+pub use kernel::sgemm_rm;
 
 /// Which buffer in a [`MatMulTape`] a [`ParamView`] points at.
 #[cfg(feature = "train")]

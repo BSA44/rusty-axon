@@ -7,6 +7,7 @@
 //! methods are gated internally.
 
 pub mod activations;
+pub mod arena;
 #[cfg(feature = "train")]
 pub mod layer;
 pub mod linear;
@@ -23,6 +24,7 @@ pub mod visualization;
 
 // Re-export commonly used types
 pub use activations::Activations;
+pub use arena::InferArena;
 #[cfg(feature = "train")]
 pub use layer::Layer;
 pub use linear::Linear;

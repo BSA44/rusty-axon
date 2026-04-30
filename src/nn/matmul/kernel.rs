@@ -8,7 +8,7 @@
 //! — i.e. when the `matrixmultiply` feature is on.
 
 #[cfg(all(feature = "matrixmultiply", not(feature = "naive-matmul")))]
-pub(crate) use super::kernel_mm::sgemm_rm;
+pub use super::kernel_mm::sgemm_rm;
 
 #[cfg(any(not(feature = "matrixmultiply"), feature = "naive-matmul"))]
-pub(crate) use super::kernel_naive::sgemm_rm;
+pub use super::kernel_naive::sgemm_rm;

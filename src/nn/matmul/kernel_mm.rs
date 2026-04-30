@@ -11,7 +11,7 @@
 /// Row-major `sgemm` via `matrixmultiply::sgemm`.  Same contract as
 /// [`super::kernel_naive::sgemm_rm`].
 #[allow(dead_code)] // unused when the `naive-matmul` flag forces the naive kernel
-pub(crate) fn sgemm_rm(
+pub fn sgemm_rm(
     m: usize,
     k: usize,
     n: usize,

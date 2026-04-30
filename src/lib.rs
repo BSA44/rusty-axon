@@ -27,6 +27,7 @@ pub mod optim;
 #[cfg(feature = "train")]
 pub use engine::value::Value;
 pub use nn::activations::Activations;
+pub use nn::arena::InferArena;
 #[cfg(feature = "train")]
 pub use nn::layer::Layer;
 pub use nn::linear::Linear;

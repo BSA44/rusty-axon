@@ -29,6 +29,11 @@ sysinfo = "0.30"
 # Pinned exactly so timing tables are reproducible across rebuilds.
 matrixmultiply = { version = "=0.3.9", optional = true }
 
+# Phase 8: criterion drives the benchmark suite under benches/. Pinned so
+# timing tables (and JSON schema) are stable across rebuilds.
+[dev-dependencies]
+criterion = "=0.5.1"
+
 # ---------------------------------------------------------------------------
 # Profiles
 #
@@ -51,10 +56,18 @@ strip = "symbols"
 # `cargo check --no-default-features --features inference` stays green while
 # Phase 6 is still pending.
 # ---------------------------------------------------------------------------
+# `cargo bench` defaults to also running unit-tests-as-benches with the
+# default libtest harness, which doesn't understand criterion's CLI flags
+# (e.g. `--save-baseline`).  Disable that path so `cargo bench` only invokes
+# the [[bench]] targets below.
+[lib]
+bench = false
+
 [[bin]]
 name = "rusty-axon"
 path = "src/main.rs"
 required-features = ["train"]
+bench = false
 
 [[example]]
 name = "basic_autograd"
@@ -125,3 +138,48 @@ required-features = ["train"]
 name = "min_inference"
 path = "examples/min_inference.rs"
 required-features = ["inference"]
+
+# ---------------------------------------------------------------------------
+# Benches (Phase 8)
+#
+# All benches use the bigger MLP architecture from `examples/bench_mnist_matmul.rs`:
+#   784 -> 640 -> 320 -> 100 -> 10  with [ReLU, ReLU, ReLU, None].
+#
+# Per-file `#[cfg(...)]` gates around `criterion_main!` make each bench a
+# no-op under feature combos it doesn't apply to, so each `cargo bench`
+# invocation only runs the relevant subset (see docs/BENCH_COMMANDS.md).
+# ---------------------------------------------------------------------------
+[[bench]]
+name = "forward_train"
+harness = false
+path = "benches/forward_train.rs"
+
+[[bench]]
+name = "forward_train_legacy"
+harness = false
+path = "benches/forward_train_legacy.rs"
+
+[[bench]]
+name = "forward_infer_f32"
+harness = false
+path = "benches/forward_infer_f32.rs"
+
+[[bench]]
+name = "forward_infer_i8"
+harness = false
+path = "benches/forward_infer_i8.rs"
+
+[[bench]]
+name = "training_step"
+harness = false
+path = "benches/training_step.rs"
+
+[[bench]]
+name = "finetune_step"
+harness = false
+path = "benches/finetune_step.rs"
+
+[[bench]]
+name = "matmul_kernel"
+harness = false
+path = "benches/matmul_kernel.rs"
