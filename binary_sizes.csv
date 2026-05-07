@@ -1,0 +1,7 @@
+id,profile,features,target,strip,artifact,bytes
+A,release,"train,inference,matrixmultiply",host,no,target/release/examples/min_inference.exe,291328
+B,release,"inference",host,no,target/release/examples/min_inference.exe,237056
+C,release-edge,"inference",host,yes,target/release-edge/examples/min_inference.exe,198144
+D,release-edge,"inference,quant-i8",host,yes,target/release-edge/examples/min_inference.exe,200192
+E,release-edge,"inference",aarch64,yes,,
+F,release-edge,"inference,quant-i8",aarch64,yes,,
