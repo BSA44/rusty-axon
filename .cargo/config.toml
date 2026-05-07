@@ -1,6 +1,24 @@
 # Cargo configuration for rusty-axon.
 #
-# Phase 0: intentionally empty placeholder. Phase 9 populates the
-# `[target.aarch64-unknown-linux-gnu]` block with `linker` and
-# `rustflags = ["-C", "target-cpu=cortex-a53", "-C", "target-feature=+neon"]`
-# for cross-compiling to Raspberry Pi Zero 2 W.
+# Phase 9: cross-compile target tuning for the Raspberry Pi Zero 2 W.
+#
+# The Pi Zero 2 W carries a Broadcom BCM2710A1 (4× Cortex-A53 @ 1 GHz). The
+# binary still runs on Pi 3/4/5 (newer ARMv8 cores) but is tuned for A53.
+# `+neon` is the Rust feature flag for the ARMv8 advanced-SIMD ISA that
+# `matrixmultiply` 0.3 auto-detects on aarch64 — these `rustflags` ensure
+# the kernel picks its NEON path even under conservative defaults.
+#
+# Linker note: `aarch64-linux-gnu-gcc` is the cross-compiler bundled with
+# Debian/Ubuntu's `gcc-aarch64-linux-gnu` package and is what `cross` /
+# `cargo-zigbuild` already wire up internally.  When building outside of
+# `cross` (e.g. plain `cargo build --target aarch64-unknown-linux-gnu` on
+# an Ubuntu host), this section makes the build work without a per-shell
+# environment override.
+#
+# Tip: pass `--profile release-edge --no-default-features --features inference`
+# (or `train,matrixmultiply`) to actually invoke this target — see
+# `scripts/build_rpi.sh` / `scripts/build_rpi.ps1` for the canonical commands.
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+rustflags = ["-C", "target-cpu=cortex-a53", "-C", "target-feature=+neon"]

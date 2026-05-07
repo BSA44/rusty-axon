@@ -1,0 +1,21 @@
+# Configuration for `cross` (https://github.com/cross-rs/cross), the Docker-
+# backed cross-compilation driver used by the Phase 9 RPi build pipeline.
+#
+# The default `cross` image for `aarch64-unknown-linux-gnu` is Ubuntu 20.04
+# (glibc 2.31).  The 20.04 base produces binaries that link forward-compat
+# against the glibc 2.36 shipped in 64-bit Pi OS Bookworm — older symbol
+# versions resolve fine on a newer libc.  `cargo-zigbuild` is the alt path
+# for users who can pin glibc versions explicitly; both are documented in
+# `docs/RPI_DEPLOY.md`.
+#
+# We deliberately do not override the image: the stock `cross` image already
+# bundles `aarch64-linux-gnu-gcc` and matches the linker named in
+# `.cargo/config.toml`.
+
+[build.env]
+# matrixmultiply's build script reads $CARGO_CFG_TARGET_FEATURE; let it pick
+# up the NEON flag set in `.cargo/config.toml`.
+passthrough = ["RUSTFLAGS"]
+
+[target.aarch64-unknown-linux-gnu]
+# Stock image; pinned only by the Rust toolchain in `rust-toolchain.toml`.

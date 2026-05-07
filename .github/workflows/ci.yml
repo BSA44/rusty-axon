@@ -77,7 +77,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Release-edge profile smoke build: catches `panic = "abort"` / LTO / strip
-  # regressions early. Host-native; aarch64 cross-compile lands in Phase 9.
+  # regressions early. Host-native.
   # ---------------------------------------------------------------------------
   release-edge:
     name: release-edge build (${{ matrix.features }})
@@ -95,3 +95,54 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - name: cargo build --profile release-edge
         run: cargo build --profile release-edge --no-default-features --features "${{ matrix.features }}"
+
+  # ---------------------------------------------------------------------------
+  # Phase 9: aarch64-unknown-linux-gnu cross-compile for Pi Zero 2 W.
+  #
+  # Drives the same `cross` toolchain documented in `docs/RPI_DEPLOY.md`.
+  # Verifies (a) the cross-compile target builds under both inference and
+  # train feature combos, (b) `target-cpu=cortex-a53 +neon` rustflags from
+  # `.cargo/config.toml` apply cleanly, (c) `matrixmultiply`'s aarch64 NEON
+  # path is reachable in the link tree.
+  #
+  # ubuntu-latest only — Windows + macOS don't run the `cross` Docker image.
+  # ---------------------------------------------------------------------------
+  rpi-cross:
+    name: aarch64 cross-compile (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "inference"
+          - "inference,quant-i8"
+          - "train,matrixmultiply"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Add aarch64 target
+        run: rustup target add aarch64-unknown-linux-gnu
+      - name: Install cross
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross
+      - name: cross build --profile release-edge --target aarch64-unknown-linux-gnu
+        run: |
+          cross build --profile release-edge \
+            --no-default-features --features "${{ matrix.features }}" \
+            --target aarch64-unknown-linux-gnu --examples
+      - name: NEON symbol audit (matrixmultiply only)
+        if: contains(matrix.features, 'matrixmultiply') || contains(matrix.features, 'inference')
+        run: |
+          # `cross` provides aarch64-linux-gnu-objdump in its container, but the
+          # binary we need to inspect already lives on the host filesystem. The
+          # Ubuntu runner ships binutils-aarch64-linux-gnu in its package set.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils-aarch64-linux-gnu
+          ART_DIR="target/aarch64-unknown-linux-gnu/release-edge/examples"
+          if [ -f "${ART_DIR}/rpi_inference" ]; then
+            echo "::group::NEON instruction sample (rpi_inference)"
+            aarch64-linux-gnu-objdump -d "${ART_DIR}/rpi_inference" \
+              | grep -E '\b(fmla|fmul|fadd)\b\s+v[0-9]+' \
+              | head -n 5 || echo "no NEON FP SIMD instructions found"
+            echo "::endgroup::"
+          fi

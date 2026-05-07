@@ -139,6 +139,14 @@ name = "min_inference"
 path = "examples/min_inference.rs"
 required-features = ["inference"]
 
+# Phase 9: aarch64 Raspberry Pi Zero 2 W cross-compile target.  Pure-`f32`
+# inference, arena-backed, no stdin parsing — kept minimal for the Phase 10
+# binary-size matrix and as the cross-compile smoke-test artifact.
+[[example]]
+name = "rpi_inference"
+path = "examples/rpi_inference.rs"
+required-features = ["inference"]
+
 # ---------------------------------------------------------------------------
 # Benches (Phase 8)
 #
