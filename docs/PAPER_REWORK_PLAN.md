@@ -621,21 +621,25 @@ For each: build → measure (`wc -c` / `Get-Item .Length`) → append CSV row �
 
 **New files.**
 - `examples/rpi_inference.rs` — pure-inference companion (used by Phase 10's binary-size matrix).
+- `examples/mnist_personalize_pretrain.rs` — host-side training of the personalization base model (`Mlp::new(&[784, 256, 128, 10], &[ReLU, ReLU, None])`); saves `mnist_pretrained.axn`. Kept separate from `examples/mnist_classifier.rs`, which stays at 784→64→32→10 as the Phase 3 regression baseline.
 - `examples/rpi_finetune_mnist.rs` — MNIST personalization demo.
 - `examples/rpi_sensor_drift.rs` — sensor-drift adaptation demo.
-- `python-tests/prepare_personalization_subset.py` — extract a stratified 200-sample subset → `mnist_personalize.csv`.
+- `python-tests/generate_personalize_data.py` — apply a fixed per-user affine + photometric transform to a held-out MNIST subset to simulate one user's consistent handwriting drift. Outputs three CSVs at `python-tests/mnist/`: `mnist_personalize_train.csv` (200 augmented samples for fine-tune), `mnist_personalize_test.csv` (500 augmented samples for eval), `mnist_personalize_clean.csv` (the same 500 indices un-augmented, for the domain-shift baseline row in the paper). Also writes `personalize_preview.png` showing clean-vs-augmented sample pairs.
 - `python-tests/generate_sensor_drift.py` — synthesize a drifting-sensor dataset (e.g., temperature sensor with monotonic offset over time, plus Gaussian noise) → `sensor_train.csv`, `sensor_drift_t1.csv`, `sensor_drift_t2.csv`, `sensor_drift_t3.csv`.
 - `scripts/run_paper_artifacts.sh` — end-to-end driver for all paper measurements.
 
 **MNIST personalization flow.**
-1. Load `mnist_pretrained.axn` (produced on host by `examples/mnist_classifier.rs` with a `model.save` call added in Phase 5).
-2. Evaluate on 1000-sample test set; print baseline accuracy.
-3. Load `mnist_personalize.csv` (200 samples).
-4. `Sgd::new(0.01, mlp.parameters_for_layers(2..3))` — only the last `32→10` Linear.
-5. Fine-tune 50 epochs × 200 samples, batch 4. Print per-step wall-clock and running loss.
-6. Re-evaluate on the same test set; print delta accuracy.
-7. `mlp.save("mnist_finetuned.axn")`.
-8. Print RSS via `sysinfo` before and after.
+1. On host: train `Mlp::new(&[784, 256, 128, 10], &[ReLU, ReLU, None])` on full MNIST via `examples/mnist_personalize_pretrain.rs`; target ≥ 97% on the un-augmented test set; save `mnist_pretrained.axn` (~937 KB f32).
+2. Run `python-tests/generate_personalize_data.py` to produce the three personalization CSVs from the held-out MNIST test set.
+3. On RPi: load `mnist_pretrained.axn`. Evaluate on `mnist_personalize_clean.csv` (500 un-augmented samples) — should match host accuracy within rounding.
+4. Evaluate on `mnist_personalize_test.csv` (500 augmented samples) — accuracy drops because the user's distribution differs from training. This is the **before** number.
+5. Load `mnist_personalize_train.csv` (200 augmented samples).
+6. `Sgd::new(0.01, mlp.parameters_for_layers(2..3))` — only the final 128→10 Linear (~1290 params). Detach inputs to that layer so backward does not propagate `dx` into frozen layers (otherwise upstream gradients accumulate uselessly into layer 0/1 tapes).
+7. Fine-tune 50 epochs × 200 samples, batch 4. Print per-step wall-clock and running loss.
+8. Re-evaluate on `mnist_personalize_test.csv` — the **after** number.
+9. Re-evaluate on `mnist_personalize_clean.csv` — confirm we have not catastrophically forgotten clean digits.
+10. `mlp.save("mnist_finetuned.axn")`.
+11. Print RSS via `sysinfo` before and after.
 
 **Sensor-drift flow.**
 1. Train a small `Mlp::new(&[1, 8, 8, 1], &[ReLU, ReLU, None])` on `sensor_train.csv` (host); save `sensor_initial.axn`.
@@ -648,14 +652,15 @@ For each: build → measure (`wc -c` / `Get-Item .Length`) → append CSV row �
 
 **Acceptance.**
 - Both demos run end-to-end on Pi Zero 2 W (manual + qemu-aarch64 smoke test in CI).
-- MNIST personalization: per-step wall-clock ≤ 2 s for batch=4. Personalization subset accuracy ≥ pretrained + 1 percentage point.
+- MNIST personalization, 784→256→128→10 model: per-step wall-clock ≤ 3 s for batch=4 on Pi Zero 2 W. Augmented test accuracy after fine-tune ≥ pre-fine-tune augmented accuracy + 4 percentage points. Clean test accuracy stays within 0.5 percentage points of the pretrained baseline (no catastrophic forgetting).
 - Sensor-drift: full fine-tune cycle (200 steps, 100 samples) completes in < 10 s on Pi Zero 2 W. MSE on drifted distribution drops by ≥ 30% post-adaptation.
 - Both produce `.axn` files that round-trip through `Mlp::load` and infer correctly.
 
 **Risks.**
 - 512 MB RAM on Pi Zero 2 W is plentiful for these workloads — not a concern.
-- "User-personalization subset" stands in for a real handwritten-digits-from-the-user dataset; document as a methodological limitation. Sensor drift is fully synthetic but well-motivated by the IoT-sensor-drift literature cited in the paper (BrainyEdge etc.).
-- Tape allocation during training holds an input snapshot per Linear (~50 KB peak for MNIST). Confirm RSS stays well under 50 MB on Pi.
+- The "user" is simulated by a fixed affine + photometric transform on held-out MNIST images, giving a real distribution shift to recover from. PAPER.md must list the augmentation parameters (rotation, shift, brightness, contrast) so reviewers can reproduce the user persona; in a real deployment this would be the user's actual handwriting. Sensor drift is fully synthetic but well-motivated by the IoT-sensor-drift literature cited in the paper (BrainyEdge etc.).
+- Fine-tuning the last layer requires the layer-2 → layer-3 boundary to act as a leaf for backward, otherwise `dx` accumulates into layer-0/1 tapes that the optimizer never reads. Either add a `Node::detach()` primitive (Phase 11 gap to fill) or rebuild the head layer with input values snapshotted into fresh leaf Nodes each forward pass.
+- Tape allocation during training holds an input snapshot per Linear; for the 784→256→128→10 model peak RSS contribution from tape buffers is ~700 KB. Confirm total RSS stays well under 50 MB on Pi.
 
 **Dependencies.** Phases 1–9. Practically requires Phase 10 (cross-compile) before testing on real hardware.
 
