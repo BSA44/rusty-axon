@@ -2,9 +2,9 @@
 //!
 //! Loads `mnist_pretrained.axn` (produced by
 //! `examples/mnist_personalize_pretrain.rs`), evaluates the pretrained
-//! 784->256->128->10 model on a clean held-out subset and on the same
+//! 784->640->320->100->10 model on a clean held-out subset and on the same
 //! subset after a fixed user-persona augmentation, then fine-tunes **only
-//! the final 128->10 Linear** for a small number of epochs over a 200-sample
+//! the final 100->10 Linear** for a small number of epochs over a 200-sample
 //! augmented training set.  Re-evaluates and writes `mnist_finetuned.axn`.
 //!
 //! The CSV trio is produced by `python-tests/generate_personalize_data.py`:
@@ -127,7 +127,12 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| "python-tests/mnist/mnist_personalize_clean.csv".into());
 
     // Activation list must match what `mnist_personalize_pretrain.rs` saved.
-    let activations = vec![Activations::ReLU, Activations::ReLU, Activations::None];
+    let activations = vec![
+        Activations::ReLU,
+        Activations::ReLU,
+        Activations::ReLU,
+        Activations::None,
+    ];
 
     println!("[finetune] loading model {}", model_path.display());
     let mlp = match Mlp::load(&model_path, &activations) {

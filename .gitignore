@@ -25,3 +25,5 @@ mnist/
 mnist_cache/
 
 .claude/
+
+.venv

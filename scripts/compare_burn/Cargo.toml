@@ -1,0 +1,51 @@
+[package]
+name = "compare-burn"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Burn (NdArray backend) baseline harness for the rusty-axon paper. Measures forward/inference latency, single-step training latency, and binary size for an MLP architecturally identical to rusty-axon's Phase 8 criterion suite (784 -> 640 -> 320 -> 100 -> 10, [ReLU, ReLU, ReLU, None])."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "min_inference"
+path = "src/bin/min_inference.rs"
+
+# Pin Burn exactly so paper tables are reproducible. NdArray backend keeps
+# the comparison apples-to-apples with rusty-axon: pure-CPU Rust, no BLAS,
+# no CUDA, no Tch. A "BLAS-backed Burn" reference can be added as an
+# optional feature if needed (see docs/COMPARISON.md).
+[dependencies]
+burn = { version = "=0.16.0", default-features = false, features = ["std", "ndarray", "train"] }
+burn-ndarray = { version = "=0.16.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# Mirrors rusty-axon's `release-edge` profile so binary-size and latency
+# numbers in the paper are measured under matching compiler settings.
+[profile.release-edge]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[[bench]]
+name = "forward_one"
+harness = false
+
+[[bench]]
+name = "infer_into_buf"
+harness = false
+
+[[bench]]
+name = "train_step_batch32"
+harness = false

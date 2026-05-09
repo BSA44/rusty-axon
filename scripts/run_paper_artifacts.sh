@@ -8,13 +8,16 @@
 #   3. Run the on-device demos (host build, then optionally cross-compile
 #      for the Pi if `--rpi` is passed and the cross-toolchain is available).
 #   4. Refresh the binary-size and benchmark tables.
+#   5. (--compare) Run the Phase-K Burn + TFLite Micro comparison harnesses
+#      so docs/COMPARISON.md can be populated with cross-framework numbers.
 #
 # Each step's stdout is mirrored to docs/artifacts/<step>.log so the paper's
 # tables can cite specific log lines.  Failures abort with a non-zero exit
 # so CI can pick them up.
 #
 # Usage:
-#   bash scripts/run_paper_artifacts.sh [--rpi] [--skip-pretrain] [--skip-bench]
+#   bash scripts/run_paper_artifacts.sh \
+#     [--rpi] [--skip-pretrain] [--skip-bench] [--compare]
 
 set -euo pipefail
 
@@ -26,11 +29,13 @@ mkdir -p "$ART"
 RPI=0
 SKIP_PRETRAIN=0
 SKIP_BENCH=0
+COMPARE=0
 for arg in "$@"; do
     case "$arg" in
         --rpi)            RPI=1 ;;
         --skip-pretrain)  SKIP_PRETRAIN=1 ;;
         --skip-bench)     SKIP_BENCH=1 ;;
+        --compare)        COMPARE=1 ;;
         *) echo "unknown flag: $arg" >&2; exit 2 ;;
     esac
 done
@@ -94,6 +99,32 @@ fi
 if [ "$SKIP_BENCH" -eq 0 ]; then
     log_step "5. refresh binary-size table"
     bash scripts/measure_binary_size.sh 2>&1 | tee "$ART/09_binary_size.log"
+fi
+
+# 6. Phase-K cross-framework comparison (Burn + TFLite Micro) ---------------
+# Opt-in because both harnesses pull in heavy toolchains (Burn = 5+ min cold
+# build, TFLM = git submodule + C compiler + tensorflow Python). When the
+# inputs are already prepared, this stage takes a few minutes total.
+if [ "$COMPARE" -eq 1 ]; then
+    log_step "6a. Burn baseline (compare_burn)"
+    cargo bench --manifest-path scripts/compare_burn/Cargo.toml \
+        2>&1 | tee "$ART/10_compare_burn.log"
+
+    log_step "6b. TFLite Micro: train + export + build + bench"
+    if [ ! -f scripts/compare_tflite_micro/mnist_mlp_tflite.h ]; then
+        python python-tests/train_keras_mnist.py \
+            2>&1 | tee "$ART/11_train_keras.log"
+    else
+        echo "  mnist_mlp_tflite.h already present, skipping Keras export"
+    fi
+    if [ ! -d scripts/compare_tflite_micro/tflite-micro ]; then
+        echo "  tflite-micro submodule missing under scripts/compare_tflite_micro/" >&2
+        echo "  see scripts/compare_tflite_micro/README.md for the clone+build steps" >&2
+    else
+        make -C scripts/compare_tflite_micro 2>&1 | tee "$ART/12_build_tflm.log"
+        ./scripts/compare_tflite_micro/tflm_mnist bench 5000 \
+            2>&1 | tee "$ART/13_bench_tflm.log"
+    fi
 fi
 
 log_step "done"

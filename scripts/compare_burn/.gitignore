@@ -1,0 +1,3 @@
+# Cargo.lock is intentionally checked in for paper-table reproducibility,
+# matching the root repo's policy.
+/target

@@ -26,7 +26,7 @@ starting any phase.
 | 9     | aarch64 cross-compile (Pi Zero 2 W)                        | ✅ |
 | 10    | Binary-size automation                                     | ✅ |
 | 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ✅ |
-| K     | `PAPER.md`, `COMPARISON.md`, Burn/Candle/TFLM/MicroFlow    | ⏳ next |
+| K     | `PAPER.md`, `COMPARISON.md`, Burn + TFLM                   | 🚧 in progress: `COMPARISON.md`, [`scripts/compare_burn/`](scripts/compare_burn/), [`scripts/compare_tflite_micro/`](scripts/compare_tflite_micro/), [`python-tests/train_keras_mnist.py`](python-tests/train_keras_mnist.py) scaffolded; `PAPER.md` and README rewrite still pending |
 
 > **Note:** `Mlp` now composes `Linear` (fused [`MatMulTape`](src/engine/matmul/mod.rs))
 > end-to-end after Phase 3. The legacy `Neuron` / `Layer` modules are kept on

@@ -18,7 +18,7 @@ This rework reframes the project around the paper thesis:
 - **RPi target:** `aarch64-unknown-linux-gnu` only (64-bit Pi OS). No hand-written NEON kernels — `matrixmultiply` auto-uses NEON on aarch64.
 - **Demo scope:** Two demos — MNIST personalization fine-tune **and** synthetic sensor-drift adaptation.
 - **Engine precision:** Migrate the scalar engine from `f64` to `f32` (paper-pure single-precision; matches MatMul, INT8, and inference paths).
-- **Paper baselines:** Burn, Candle, TFLite Micro/MicroFlow.
+- **Paper baselines:** Burn (Rust train+infer foil) and TFLite Micro (C++ edge-inference foil). Candle and MicroFlow are intentionally excluded — Candle is redundant with Burn (same Rust train+infer category), MicroFlow is redundant with TFLite Micro (same inference-only edge category). The two retained baselines test exactly one paper claim each: Burn → "we're lighter than Rust train-capable frameworks"; TFLite Micro → "we can train where edge runtimes can't".
 
 ---
 
@@ -676,20 +676,28 @@ For each: build → measure (`wc -c` / `Get-Item .Length`) → append CSV row �
 
 **New files.**
 - `docs/PAPER.md` — thesis, claims, methodology, results tables, reproduction instructions.
-- `docs/COMPARISON.md` — side-by-side with Burn, Candle, TFLite Micro, MicroFlow.
-- `scripts/compare_burn/` — separate Cargo project building the same MLP in [Burn](https://burn.dev/), times forward + training step.
-- `scripts/compare_candle/` — same for [Candle](https://github.com/huggingface/candle).
-- `scripts/compare_tflite_micro/` — small C harness building TFLite Micro for an equivalent MLP (inference only); measures binary size + inference latency.
-- `scripts/compare_microflow/` — Rust harness for [MicroFlow](https://github.com/matteocarnelos/microflow-rs) (inference only).
+- `docs/COMPARISON.md` — side-by-side with Burn and TFLite Micro.
+- `scripts/compare_burn/` — separate Cargo project building the same MLP in [Burn](https://burn.dev/) with the `ndarray` backend (no BLAS, no CUDA — apples-to-apples pure-CPU Rust). Exposes `forward_one`, `train_step_batch32`, `infer_into_buf` driven by `criterion`. Cross-compiles to aarch64 with the same `release-edge` flags as rusty-axon.
+- `scripts/compare_tflite_micro/` — small C harness building TFLite Micro for an equivalent MLP (inference only); measures binary size + inference latency. The Keras source model is trained by `python-tests/train_keras_mnist.py` (matched architecture and target accuracy), exported to `.tflite`, and embedded via `xxd -i` into a C array statically linked into the harness.
+
+**Methodology — pin everything except the framework.** Same architecture (MLP 784→64→32→10, ReLU/ReLU/None), same dataset (MNIST, identical train/test split, pixels / 255.0 → f32), same hardware (host x86_64 **and** Pi Zero 2 W aarch64, both rows for every cell), same compiler stance (`release-edge` profile — LTO fat, opt-level z, strip — for every Rust target; equivalent `-Os -flto -s` for the TFLM C harness). Burn handwrites the MLP rather than using the CNN tutorial. If we want a "Burn at full speed" reference, BLAS-backed Burn can be added as an extra column with a footnote — but the headline comparison stays NdArray-only for fairness.
 
 **Result tables (filled with measured numbers from Phases 8 + 10 + 11):**
-1. **Forward latency, MNIST 784→64→32→10, single sample.** Cols: legacy scalar Value, fused MatMul (train), inference f32, inference i8, Burn, Candle, MicroFlow, TFLite Micro. Rows: host x86_64, RPi Zero 2 W aarch64.
-2. **Single training step, batch=32.** Cols: rusty-axon SGD, rusty-axon MeProp, Burn, Candle. (TFLite Micro / MicroFlow inapplicable — categorical difference.)
-3. **Binary size, stripped.** Combos A–F + Burn + Candle + MicroFlow + TFLite Micro.
-4. **RSS during training and inference.** RPi Zero 2 W only.
-5. **Fine-tune wall-clock per step on RPi Zero 2 W.** Last-layer-only (MNIST) + full-model (sensor drift).
-6. **PTQ accuracy delta.** f32 vs i8 test accuracy on MNIST.
-7. **Sensor-drift adaptation.** MSE vs time, pre- and post-adaptation.
+
+| # | Table                                       | rusty-axon | Burn | TFLM | Notes                                       |
+|---|---------------------------------------------|:----------:|:----:|:----:|---------------------------------------------|
+| 1 | Forward latency, single sample              | ✓          | ✓    | ✓    | Cols: legacy scalar Value, fused MatMul (train), inference f32, inference i8, Burn, TFLM. Rows: host x86_64, RPi Zero 2 W aarch64. |
+| 2 | Inference latency, batch=1, infer build     | ✓          | ✓    | ✓    | The headline edge number.                   |
+| 3 | Single training step, batch=32              | ✓          | ✓    | —    | TFLM cell = "N/A — inference only" (categorical difference). Cols: rusty-axon SGD, rusty-axon MeProp, Burn. |
+| 4 | Binary size, stripped, `release-edge`       | ✓          | ✓    | ✓    | Phase 10 combos A–F + Burn + TFLM.          |
+| 5 | RSS during inference, RPi Zero 2 W only     | ✓          | ✓    | ✓    | `sysinfo` for Rust, `getrusage` for the C harness. |
+| 6 | RSS during training, RPi Zero 2 W only      | ✓          | ✓    | —    | TFLM N/A (no training).                     |
+| 7 | MNIST test accuracy (f32 / i8)              | ✓          | ✓    | ✓    | Sanity check that we're comparing equivalent models. |
+| 8 | Fine-tune wall-clock per step on RPi Zero 2 W | ✓        | ✓    | —    | Last-layer-only (MNIST) + full-model (sensor drift). |
+| 9 | PTQ accuracy delta                          | ✓          | —    | —    | f32 vs i8 test accuracy on MNIST, rusty-axon only. |
+| 10| Sensor-drift adaptation                     | ✓          | —    | —    | MSE vs time, pre- and post-adaptation, rusty-axon only. |
+
+Tables 9–10 are single-framework artifacts (PTQ method comparison and the sensor-drift demo) and don't need cross-framework columns. Every "—" cell in the table above is reproduced as an explicit "N/A — categorical difference" string in `docs/COMPARISON.md` with a one-line reason.
 
 **Acceptance.**
 - Every table cell links to (a) the producing script and (b) the raw CSV.
@@ -697,10 +705,11 @@ For each: build → measure (`wc -c` / `Get-Item .Length`) → append CSV row �
 - README leads with the thesis and a single command to run the smallest demo.
 
 **Risks.**
-- Burn and Candle are slow to build — cross-compile from host. Don't try to build them on the Pi.
+- Burn is slow to build — cross-compile from host. Don't try to build it on the Pi.
 - Burn's MNIST docs use a CNN; we hand-write a 784→64→32→10 MLP for fairness.
-- On host x86_64, Burn/Candle may outperform rusty-axon (they have BLAS). The paper's positioning is **edge**, not host. Make this explicit in the methodology section: "rusty-axon is not designed to beat Candle on a workstation; it is designed to fit and fine-tune on a Pi Zero 2 W where Candle does not."
-- TFLite Micro / MicroFlow are inference-only; comparison is inference latency + binary size only, with explicit categorical-difference framing on training.
+- On host x86_64, Burn (especially with a BLAS backend) may outperform rusty-axon. The paper's positioning is **edge**, not host. Make this explicit in the methodology section: "rusty-axon is not designed to beat Burn on a workstation; it is designed to fit and fine-tune on a Pi Zero 2 W where Burn's footprint is impractical."
+- TFLite Micro is inference-only; comparison is inference latency + binary size + RSS only, with explicit "N/A — inference only" framing on training-related rows.
+- The TFLM C harness must be built with comparable optimization flags (`-Os -flto -s`) to the Rust `release-edge` profile; document the exact `Makefile` so reviewers can reproduce.
 
 **Dependencies.** Phases 8, 10, 11.
 
@@ -786,7 +795,7 @@ The user did not ask for it; MNIST hits 95–97% with the 784→64→32→10 MLP
 | 11      | 9     | aarch64 cross-compile                                  | yes      |
 | 12      | 10    | binary-size automation                                 | yes      |
 | 13      | 11    | RPi demos (MNIST personalize + sensor drift)           | yes      |
-| (par.)  | K     | PAPER.md, COMPARISON.md, Burn/Candle/TFLM/MicroFlow    | no       |
+| (par.)  | K     | PAPER.md, COMPARISON.md, Burn + TFLM                   | no       |
 
 If compressed: 0+0.5 → one session, 4+8 → one session, 9+10 → one session. Minimum ≈ 9 sessions.
 

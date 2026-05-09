@@ -177,21 +177,21 @@ def main():
     X, y = download_mnist()
     print(f"[+] Full dataset: {X.shape[0]} images, {X.shape[1]} pixels each")
     
-    # Prepare training set: 800 images (80 per class)
-    X_train, y_train = prepare_balanced_subset(X, y, samples_per_class=80, seed=42)
-    
-    # Prepare test set: 200 images (20 per class) with different seed
-    X_test, y_test = prepare_balanced_subset(X, y, samples_per_class=20, seed=123)
-    
+    # Phase K paper-quality subset: 50k train / 10k test, balanced per class.
+    # This is effectively full MNIST (its native split is 60k/10k, capped to
+    # what's available per class in the combined 70k pool).
+    X_train, y_train = prepare_balanced_subset(X, y, samples_per_class=5000, seed=42)
+    X_test, y_test = prepare_balanced_subset(X, y, samples_per_class=1000, seed=123)
+
     # Save to CSV
     save_to_csv(X_train, y_train, os.path.join(output_dir, "mnist_train.csv"))
     save_to_csv(X_test, y_test, os.path.join(output_dir, "mnist_test.csv"))
-    
+
     print()
     print("=" * 50)
     print("Dataset ready!")
-    print(f"  Training: mnist/mnist_train.csv (800 samples)")
-    print(f"  Testing:  mnist/mnist_test.csv (200 samples)")
+    print(f"  Training: mnist/mnist_train.csv ({len(y_train)} samples)")
+    print(f"  Testing:  mnist/mnist_test.csv ({len(y_test)} samples)")
     print("=" * 50)
     
     # Show sample distribution

@@ -1,6 +1,6 @@
 //! MNIST Handwritten Digits Classifier Demo
 //!
-//! Architecture: 784 -> 64 -> 32 -> 10
+//! Architecture: 784 -> 640 -> 320 -> 100 -> 10
 //!
 //! Before running, prepare the data:
 //!   cd python-tests && python prepare_mnist.py
@@ -195,8 +195,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("[2/5] Creating neural network...");
     let mlp = Mlp::new(
-        &[784, 64, 32, 10],
-        &[Activations::ReLU, Activations::ReLU, Activations::None], // No activation before softmax
+        &[784, 640, 320, 100, 10],
+        &[
+            Activations::ReLU,
+            Activations::ReLU,
+            Activations::ReLU,
+            Activations::None, // No activation before softmax
+        ],
     );
 
     let num_params: usize = mlp.parameters().len();

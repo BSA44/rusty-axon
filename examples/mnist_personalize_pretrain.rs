@@ -1,10 +1,13 @@
 //! Pretrain the base classifier for the MNIST personalization demo (Phase 11).
 //!
-//! Trains an `Mlp::new(&[784, 256, 128, 10], &[ReLU, ReLU, None])` on the full
-//! MNIST training set produced by `python python-tests/prepare_mnist.py` and
-//! writes `mnist_pretrained.axn` next to this binary.  Kept separate from
-//! `examples/mnist_classifier.rs`, which stays at 784->64->32->10 as the
-//! Phase 3 regression baseline.
+//! Trains an
+//! `Mlp::new(&[784, 640, 320, 100, 10], &[ReLU, ReLU, ReLU, None])` on
+//! the full MNIST training set produced by
+//! `python python-tests/prepare_mnist.py` and writes `mnist_pretrained.axn`
+//! next to this binary.  Architecture matches `benches/common/mod.rs`,
+//! `examples/mnist_classifier.rs`, and the Phase K Burn / TFLite Micro
+//! comparison harnesses so on-device fine-tune wall-clock numbers compare
+//! directly against the bench data.
 //!
 //! Run:
 //!   cargo run --release --example mnist_personalize_pretrain
@@ -88,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lr: f32 = parse_env("PRETRAIN_LR", 0.01_f32);
     let out_path = PathBuf::from(parse_env("PRETRAIN_OUT", "mnist_pretrained.axn".to_string()));
 
-    println!("[pretrain] arch=784,256,128,10  epochs={}  batch={}  lr={}", epochs, batch_size, lr);
+    println!("[pretrain] arch=784,640,320,100,10  epochs={}  batch={}  lr={}", epochs, batch_size, lr);
 
     let (train_images, train_labels) = load_mnist_csv("python-tests/mnist/mnist_train.csv")
         .expect("load mnist_train.csv (run python python-tests/prepare_mnist.py first)");
@@ -101,8 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mlp = Mlp::new(
-        &[784, 256, 128, 10],
-        &[Activations::ReLU, Activations::ReLU, Activations::None],
+        &[784, 640, 320, 100, 10],
+        &[
+            Activations::ReLU,
+            Activations::ReLU,
+            Activations::ReLU,
+            Activations::None,
+        ],
     );
     let mut optimizer = Sgd::new(lr, mlp.parameters());
     let loss_fn = CrossEntropy::new(0.1);

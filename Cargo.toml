@@ -147,8 +147,8 @@ name = "rpi_inference"
 path = "examples/rpi_inference.rs"
 required-features = ["inference"]
 
-# Phase 11 host-side helper: trains the 784->256->128->10 base classifier for
-# the personalization demo and saves `mnist_pretrained.axn`.
+# Phase 11 host-side helper: trains the 784->640->320->100->10 base classifier
+# for the personalization demo and saves `mnist_pretrained.axn`.
 [[example]]
 name = "mnist_personalize_pretrain"
 path = "examples/mnist_personalize_pretrain.rs"
