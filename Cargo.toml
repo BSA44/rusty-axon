@@ -147,6 +147,29 @@ name = "rpi_inference"
 path = "examples/rpi_inference.rs"
 required-features = ["inference"]
 
+# Phase 11 host-side helper: trains the 784->256->128->10 base classifier for
+# the personalization demo and saves `mnist_pretrained.axn`.
+[[example]]
+name = "mnist_personalize_pretrain"
+path = "examples/mnist_personalize_pretrain.rs"
+required-features = ["train"]
+
+# Phase 11 RPi demo: load `mnist_pretrained.axn`, evaluate on a held-out
+# clean and an augmented persona subset, fine-tune only the last Linear,
+# re-evaluate, save `mnist_finetuned.axn`.
+[[example]]
+name = "rpi_finetune_mnist"
+path = "examples/rpi_finetune_mnist.rs"
+required-features = ["train"]
+
+# Phase 11 RPi demo: synthetic sensor-drift adaptation cycle.  Pretrains
+# (or loads) a 1->8->8->1 calibration network, then progressively re-fits
+# it against drifted readings at t1/t2/t3.
+[[example]]
+name = "rpi_sensor_drift"
+path = "examples/rpi_sensor_drift.rs"
+required-features = ["train"]
+
 # ---------------------------------------------------------------------------
 # Benches (Phase 8)
 #

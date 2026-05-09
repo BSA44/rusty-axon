@@ -25,8 +25,8 @@ starting any phase.
 | 8     | Static arena + criterion benchmark suite                   | ✅ |
 | 9     | aarch64 cross-compile (Pi Zero 2 W)                        | ✅ |
 | 10    | Binary-size automation                                     | ✅ |
-| 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ⏳ next |
-| K     | `PAPER.md`, `COMPARISON.md`, Burn/Candle/TFLM/MicroFlow    | ⏳ |
+| 11    | RPi demos: MNIST personalize + sensor-drift adapt          | ✅ |
+| K     | `PAPER.md`, `COMPARISON.md`, Burn/Candle/TFLM/MicroFlow    | ⏳ next |
 
 > **Note:** `Mlp` now composes `Linear` (fused [`MatMulTape`](src/engine/matmul/mod.rs))
 > end-to-end after Phase 3. The legacy `Neuron` / `Layer` modules are kept on
