@@ -34,8 +34,11 @@
 
 /* Tensor arena. Sized for 784 -> 640 -> 320 -> 100 -> 10 with f32
  * activations: peak working set (largest pair of adjacent layer buffers
- * plus tensor metadata + op state) is ~16 KiB; 64 KiB is generous. */
-constexpr int kTensorArenaSize = 64 * 1024;
+ * plus tensor metadata + op state) is ~16 KiB. 256 KiB leaves generous
+ * headroom for op-state, scratch buffers, and alignment slack; we report
+ * `arena_used_bytes()` so it can be tightened later for the binary-size
+ * column once we know the true high-water mark. */
+constexpr int kTensorArenaSize = 256 * 1024;
 alignas(16) static uint8_t tensor_arena[kTensorArenaSize];
 
 static void fill_fixed_input(float* dst, int n) {
@@ -81,33 +84,76 @@ int main(int argc, char** argv) {
     if (iters <= 0) iters = 1000;
   }
 
+  fprintf(stderr, "[diag] embedded model bytes: %zu\n",
+          (size_t)sizeof(mnist_mlp_tflite));
+  if (sizeof(mnist_mlp_tflite) < 16) {
+    fprintf(stderr, "[diag] model blob too small -- header generation likely empty\n");
+    return 1;
+  }
+
   const tflite::Model* model = tflite::GetModel(mnist_mlp_tflite);
+  fprintf(stderr, "[diag] model schema version: %d (runtime expects %d)\n",
+          (int)model->version(), TFLITE_SCHEMA_VERSION);
   if (model->version() != TFLITE_SCHEMA_VERSION) {
     fprintf(stderr, "schema mismatch: model %d vs runtime %d\n",
             (int)model->version(), TFLITE_SCHEMA_VERSION);
     return 1;
   }
 
-  /* Mutable op resolver: register only the ops the MLP actually uses
-   * (FullyConnected, Relu, plus Softmax if the converter emitted one).
-   * Keeping the op set tight is what makes TFLM's binary small. */
-  static tflite::MicroMutableOpResolver<4> resolver;
+  /* Mutable op resolver. Bumped to 6 slots so the converter can pull in
+   * Logistic / Add / etc. without tripping a silent registration failure.
+   * We always register the four core ops we know an MLP needs; the rest
+   * are belt-and-braces for converter quirks. */
+  static tflite::MicroMutableOpResolver<6> resolver;
   resolver.AddFullyConnected();
   resolver.AddRelu();
-  resolver.AddSoftmax();   /* harmless if absent; some converters add it */
-  resolver.AddReshape();   /* the converter sometimes emits a leading Reshape */
+  resolver.AddSoftmax();    /* harmless if absent; some converters add it */
+  resolver.AddReshape();    /* leading Reshape from a Flatten layer        */
+  resolver.AddLogistic();   /* belt-and-braces                              */
+  resolver.AddAdd();        /* belt-and-braces (split bias)                 */
 
   tflite::MicroInterpreter interpreter(model, resolver, tensor_arena, kTensorArenaSize);
   TfLiteStatus alloc_status = interpreter.AllocateTensors();
+  fprintf(stderr, "[diag] AllocateTensors status=%d  arena_used=%zu / %d bytes\n",
+          (int)alloc_status, interpreter.arena_used_bytes(), kTensorArenaSize);
   if (alloc_status != kTfLiteOk) {
-    fprintf(stderr, "AllocateTensors failed (status %d)\n", (int)alloc_status);
+    fprintf(stderr, "AllocateTensors failed (status %d) -- bump kTensorArenaSize "
+                    "or add the missing op above\n", (int)alloc_status);
+    return 1;
+  }
+
+  fprintf(stderr, "[diag] inputs=%zu  outputs=%zu\n",
+          interpreter.inputs_size(), interpreter.outputs_size());
+  if (interpreter.inputs_size() == 0 || interpreter.outputs_size() == 0) {
+    fprintf(stderr, "model exposes no inputs or outputs -- bad .tflite blob?\n");
     return 1;
   }
 
   TfLiteTensor* input = interpreter.input(0);
   TfLiteTensor* output = interpreter.output(0);
+  if (input == nullptr || output == nullptr) {
+    fprintf(stderr, "input/output tensor pointer is null (input=%p output=%p)\n",
+            (void*)input, (void*)output);
+    return 1;
+  }
+  fprintf(stderr, "[diag] input  type=%d bytes=%zu dims=%d",
+          (int)input->type, (size_t)input->bytes,
+          input->dims ? input->dims->size : -1);
+  if (input->dims) {
+    for (int i = 0; i < input->dims->size; ++i) fprintf(stderr, " %d", input->dims->data[i]);
+  }
+  fprintf(stderr, "\n[diag] output type=%d bytes=%zu dims=%d",
+          (int)output->type, (size_t)output->bytes,
+          output->dims ? output->dims->size : -1);
+  if (output->dims) {
+    for (int i = 0; i < output->dims->size; ++i) fprintf(stderr, " %d", output->dims->data[i]);
+  }
+  fprintf(stderr, "\n");
+
   if (input->type != kTfLiteFloat32 || output->type != kTfLiteFloat32) {
-    fprintf(stderr, "expected f32 IO; got input=%d output=%d\n",
+    fprintf(stderr, "expected f32 IO; got input=%d output=%d "
+                    "(0=NoType, 1=Float32, 9=Int8). If 9, the converter "
+                    "quantized the model -- re-export with no quantization.\n",
             (int)input->type, (int)output->type);
     return 1;
   }

@@ -17,7 +17,7 @@ path = "src/bin/min_inference.rs"
 # no CUDA, no Tch. A "BLAS-backed Burn" reference can be added as an
 # optional feature if needed (see docs/COMPARISON.md).
 [dependencies]
-burn = { version = "=0.16.0", default-features = false, features = ["std", "ndarray", "train"] }
+burn = { version = "=0.16.0", default-features = false, features = ["std", "ndarray", "train", "metrics"] }
 burn-ndarray = { version = "=0.16.0", default-features = false, features = ["std"] }
 
 [dev-dependencies]
