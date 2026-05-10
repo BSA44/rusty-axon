@@ -41,9 +41,23 @@ INCLUDES := \
 # Match rusty-axon's release-edge profile: opt-level z, LTO fat, panic=abort
 # (no C analogue — TFLM uses bare exceptions-off C++ already), strip.
 CFLAGS_OPT := -Os -flto -ffunction-sections -fdata-sections -DNDEBUG
+
+# CRITICAL: must match the defines libtensorflow-microlite.a was built with,
+# otherwise TfLiteTensor and friends read at different field offsets in the
+# harness vs the lib (silent ABI skew -> garbage `type`/`dims`/`data`,
+# segfault on Invoke). TFLM's microlite Makefile applies these unconditionally
+# in COMMON_FLAGS; TF_LITE_USE_CTIME is added when TARGET == HOST_OS.
+TFLM_DEFINES := -DTF_LITE_STATIC_MEMORY -DTF_LITE_DISABLE_X86_NEON -DTF_LITE_USE_CTIME
+
+# Mirror microlite's compile stance so optimizer-visible attributes
+# (function/data sections, no unwind tables, no message-length wrapping)
+# don't introduce subtle differences across the lib/harness boundary.
+TFLM_COMMON := -fno-unwind-tables -fno-asynchronous-unwind-tables -fmessage-length=0
+
 LDFLAGS_OPT := -Wl,--gc-sections -flto -s
 
-CXXFLAGS := -std=c++17 -fno-exceptions -fno-rtti $(CFLAGS_OPT) $(INCLUDES)
+CXXFLAGS := -std=c++17 -fno-exceptions -fno-rtti \
+            $(CFLAGS_OPT) $(TFLM_COMMON) $(TFLM_DEFINES) $(INCLUDES)
 
 OBJS := main.o
 
