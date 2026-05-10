@@ -24,13 +24,30 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::Instant;
 
+use rand::Rng;
 use rusty_axon::engine::value::Node;
 use rusty_axon::loss::cross_entropy::CrossEntropy;
 use rusty_axon::loss::loss::Loss;
 use rusty_axon::nn::activations::Activations;
+use rusty_axon::nn::linear::Linear;
 use rusty_axon::nn::mlp::Mlp;
 use rusty_axon::optim::optimizer::Optimizer;
 use rusty_axon::optim::sgd::Sgd;
+
+// He-uniform init: U(-sqrt(6/fan_in), sqrt(6/fan_in)), bias = 0.
+// `Linear::new`'s default U(-1, 1) saturates a 4-layer ReLU MLP at this width
+// (final logits ~1e6, softmax pinned to one class, ~10% test acc). This local
+// override sidesteps that without touching the library default that the smaller
+// XOR/diabetes/housing examples rely on.
+fn he_layer(in_dim: usize, out_dim: usize, activation: Activations) -> Linear {
+    let mut rng = rand::rng();
+    let bound = (6.0_f32 / in_dim as f32).sqrt();
+    let weights: Vec<f32> = (0..out_dim * in_dim)
+        .map(|_| rng.random_range(-bound..bound))
+        .collect();
+    let bias = vec![0.0_f32; out_dim];
+    Linear::with_weights(in_dim, out_dim, weights, bias, activation)
+}
 
 fn load_mnist_csv(path: &str) -> Result<(Vec<Vec<f32>>, Vec<usize>), Box<dyn std::error::Error>> {
     let file = File::open(path)?;
@@ -86,7 +103,7 @@ fn parse_env<T: std::str::FromStr>(name: &str, default: T) -> T {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let epochs: usize = parse_env("PRETRAIN_EPOCHS", 8usize);
+    let epochs: usize = parse_env("PRETRAIN_EPOCHS", 25usize);
     let batch_size: usize = parse_env("PRETRAIN_BATCH", 32usize);
     let lr: f32 = parse_env("PRETRAIN_LR", 0.01_f32);
     let out_path = PathBuf::from(parse_env("PRETRAIN_OUT", "mnist_pretrained.axn".to_string()));
@@ -103,15 +120,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         test_images.len()
     );
 
-    let mlp = Mlp::new(
-        &[784, 640, 320, 100, 10],
-        &[
-            Activations::ReLU,
-            Activations::ReLU,
-            Activations::ReLU,
-            Activations::None,
-        ],
-    );
+    let mlp = Mlp::with_layers(vec![
+        he_layer(784, 640, Activations::ReLU),
+        he_layer(640, 320, Activations::ReLU),
+        he_layer(320, 100, Activations::ReLU),
+        he_layer(100, 10, Activations::None),
+    ]);
     let mut optimizer = Sgd::new(lr, mlp.parameters());
     let loss_fn = CrossEntropy::new(0.1);
 
